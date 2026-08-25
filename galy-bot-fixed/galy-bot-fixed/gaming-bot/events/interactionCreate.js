@@ -11,6 +11,8 @@ const {
   createTicket,
   claimTicket,
   closeTicket,
+  finalizeCloseTicket,
+  cancelCloseTicket,
 } = require('../utils/ticketManager');
 
 const {
@@ -1184,6 +1186,36 @@ module.exports = {
           await closeTicket(
             interaction,
             null
+          );
+
+          return;
+        }
+
+
+        /* =================================================
+           TICKET CLOSE CONFIRMATION
+        ================================================= */
+
+        if (
+          interaction.customId ===
+          'ticket_close_confirm'
+        ) {
+
+          await finalizeCloseTicket(
+            interaction
+          );
+
+          return;
+        }
+
+
+        if (
+          interaction.customId ===
+          'ticket_close_cancel'
+        ) {
+
+          await cancelCloseTicket(
+            interaction
           );
 
           return;
