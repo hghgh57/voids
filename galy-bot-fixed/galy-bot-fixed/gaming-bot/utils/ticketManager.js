@@ -158,14 +158,6 @@ function getRoleIdsForTicket(categoryId) {
       !id.startsWith('PUT_')
   );
 
-  /*
-    Service categories can have their own roles.
-    Example:
-    building_service -> builder role
-    digging_service -> digging role
-    regears_service -> regear role
-  */
-
   if (categoryRoleIds.length) {
     return categoryRoleIds;
   }
@@ -261,14 +253,6 @@ async function createTicket(
   ];
 
 
-  /*
-    Give the bot explicit access.
-
-    Use client.user.id instead of guild.members.me.id
-    because guild.members.me can occasionally be null/not
-    cached when the bot is starting.
-  */
-
   if (interaction.client.user) {
     permissionOverwrites.push({
       id: interaction.client.user.id,
@@ -291,8 +275,17 @@ async function createTicket(
 
 
   for (const roleId of staffRoleIds) {
+    const role = await guild.roles.fetch(roleId).catch(() => null);
+
+    if (!role) {
+      console.warn(
+        `[TICKET] Could not fetch staff role ${roleId}`
+      );
+      continue;
+    }
+
     permissionOverwrites.push({
-      id: roleId,
+      id: role.id,
 
       allow: [
         PermissionsBitField.Flags.ViewChannel,
@@ -327,29 +320,29 @@ async function createTicket(
   };
 
 
-  /*
-    SERVICE TICKETS
-
-    building_service
-    digging_service
-    regears_service
-
-    all go into:
-    config.serviceTicketCategoryId
-  */
-
   const requestedParentId = isServiceTicket(categoryId)
     ? config.serviceTicketCategoryId
     : config.ticketCategoryId;
 
-  // Do not blindly pass a stale/non-category channel ID as parent.
-  // If it is invalid, Discord can reject channel creation completely.
-  if (requestedParentId && typeof requestedParentId === 'string' && !requestedParentId.startsWith('PUT_')) {
-    const parent = await guild.channels.fetch(requestedParentId).catch(() => null);
-    if (parent && parent.type === ChannelType.GuildCategory) {
+
+  if (
+    requestedParentId &&
+    typeof requestedParentId === 'string' &&
+    !requestedParentId.startsWith('PUT_')
+  ) {
+    const parent = await guild.channels
+      .fetch(requestedParentId)
+      .catch(() => null);
+
+    if (
+      parent &&
+      parent.type === ChannelType.GuildCategory
+    ) {
       channelOptions.parent = requestedParentId;
     } else {
-      console.warn(`[TICKET] Configured parent ${requestedParentId} is not a valid category; creating at server root.`);
+      console.warn(
+        `[TICKET] Configured parent ${requestedParentId} is not a valid category; creating at server root.`
+      );
     }
   }
 
@@ -368,9 +361,7 @@ async function createTicket(
         )
         .setDescription(
           `Hi ${user}, thanks for reaching out!\n\n` +
-
           `**Category:** ${category.label}\n\n` +
-
           'Please provide as much detail as possible. ' +
           'A member of our team will be with you shortly.'
         )
@@ -488,28 +479,54 @@ async function createApplicationTicket(
 
     if (!appConfig) {
       throw new Error(
-        'Missing application configuration.'
+        `Application config not found for ${appId}.`
       );
     }
 
 
-    const user =
-      member.user;
+    console.log(
+      '[APPLICATION] Attempting to create application ticket:',
+      {
+        guildId: guild.id,
+        userId: member.id,
+        appId,
+        application: appConfig.label,
+      }
+    );
 
 
-    /*
-      Applications are staff-only tickets.
+    const parentId =
+      config.applicationTicketCategoryId ||
+      config.ticketCategoryId;
 
-      The applicant can see the channel so they can
-      see that their application exists.
 
-      Application staff roles can access it too.
-    */
+    const roleIds =
+      (
+        appConfig.roleIds ||
+        appConfig.roles ||
+        getApplicationTicketRoleIds()
+      ).filter(
+        (id) =>
+          id &&
+          typeof id === 'string' &&
+          !id.startsWith('PUT_')
+      );
+
+
+    console.log(
+      '[APPLICATION] Creating application ticket:',
+      {
+        userId: member.id,
+        appId,
+        parentId,
+        roles: roleIds,
+      }
+    );
+
 
     const permissionOverwrites = [
       {
-        id:
-          guild.roles.everyone.id,
+        id: guild.roles.everyone.id,
 
         deny: [
           PermissionsBitField.Flags.ViewChannel,
@@ -517,8 +534,7 @@ async function createApplicationTicket(
       },
 
       {
-        id:
-          user.id,
+        id: member.id,
 
         allow: [
           PermissionsBitField.Flags.ViewChannel,
@@ -531,55 +547,55 @@ async function createApplicationTicket(
     ];
 
 
-    /*
-      Explicit bot permissions.
+    if (guild.client.user) {
+      permissionOverwrites.push({
+        id: guild.client.user.id,
 
-      This fixes the problem where the channel could
-      be created but the bot failed when trying to
-      send the application embed.
-    */
-
-    const botId =
-      guild.members.me?.id ||
-      guild.client.user?.id;
-
-
-    if (!botId) {
-      throw new Error(
-        'Could not determine bot user ID.'
-      );
+        allow: [
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.SendMessages,
+          PermissionsBitField.Flags.ReadMessageHistory,
+          PermissionsBitField.Flags.ManageChannels,
+          PermissionsBitField.Flags.ManageMessages,
+          PermissionsBitField.Flags.AttachFiles,
+          PermissionsBitField.Flags.EmbedLinks,
+        ],
+      });
     }
 
 
-    permissionOverwrites.push({
-      id: botId,
-
-      allow: [
-        PermissionsBitField.Flags.ViewChannel,
-        PermissionsBitField.Flags.SendMessages,
-        PermissionsBitField.Flags.ReadMessageHistory,
-        PermissionsBitField.Flags.ManageChannels,
-        PermissionsBitField.Flags.ManageMessages,
-        PermissionsBitField.Flags.AttachFiles,
-        PermissionsBitField.Flags.EmbedLinks,
-      ],
-    });
-
-
-    const applicationRoleIds =
-      getApplicationTicketRoleIds();
-
-
     /*
-      Add configured application staff roles.
+      IMPORTANT:
+      Fetch every role before passing it to Discord.js.
+
+      This prevents:
+      "Supplied parameter is not a cached User or Role."
     */
 
-    for (
-      const roleId
-      of applicationRoleIds
-    ) {
+    for (const roleId of roleIds) {
+      const role = await guild.roles
+        .fetch(roleId)
+        .catch((error) => {
+          console.error(
+            `[APPLICATION] Failed to fetch role ${roleId}:`,
+            error
+          );
+
+          return null;
+        });
+
+
+      if (!role) {
+        console.warn(
+          `[APPLICATION] Skipping invalid/missing role ${roleId}.`
+        );
+
+        continue;
+      }
+
+
       permissionOverwrites.push({
-        id: roleId,
+        id: role.id,
 
         allow: [
           PermissionsBitField.Flags.ViewChannel,
@@ -593,46 +609,8 @@ async function createApplicationTicket(
     }
 
 
-    /*
-      Also allow the general support/admin roles.
-
-      This prevents your application channel from
-      being inaccessible if applicationTicketRoleIds
-      was changed or the application staff role does
-      not have the required channel access.
-    */
-
-    const extraRoleIds = [
-      ...(config.supportRoleIds || []),
-      ...(config.adminRoleIds || []),
-    ].filter(
-      (roleId) =>
-        roleId &&
-        typeof roleId === 'string' &&
-        !roleId.startsWith('PUT_') &&
-        !applicationRoleIds.includes(roleId)
-    );
-
-
-    for (
-      const roleId
-      of extraRoleIds
-    ) {
-      permissionOverwrites.push({
-        id: roleId,
-
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.ReadMessageHistory,
-          PermissionsBitField.Flags.ManageMessages,
-        ],
-      });
-    }
-
-
     const safeName =
-      user.username
+      member.user.username
         .toLowerCase()
         .replace(/[^a-z0-9]/g, '')
         .slice(0, 20)
@@ -642,69 +620,41 @@ async function createApplicationTicket(
 
     const channelOptions = {
       name:
-        `app-${safeName}`,
+        `application-${appId}-${safeName}`
+          .slice(0, 100),
 
       type:
         ChannelType.GuildText,
 
       topic:
-        `ticket|${user.id}|application_${appId}`,
+        `ticket|${member.id}|${appId}`,
 
       permissionOverwrites,
     };
 
 
-    /*
-      APPLICATION CATEGORY PRIORITY
+    if (
+      parentId &&
+      typeof parentId === 'string' &&
+      !parentId.startsWith('PUT_')
+    ) {
+      const parent =
+        await guild.channels
+          .fetch(parentId)
+          .catch(() => null);
 
-      1. reviewChannelId if it is actually a category
-      2. applicationTicketCategoryId
-      3. ticketCategoryId
 
-      Your config currently has:
-      applicationTicketCategoryId:
-      1533068861174452255
-
-      so the application will go there.
-    */
-
-    // Only use a parent ID if it actually points to a Discord category.
-    // A deleted channel, text channel ID, or stale config ID causes
-    // guild.channels.create() to fail and was the reason the DM flow could
-    // end with "I couldn't open a ticket". If the configured application
-    // parent is invalid, fall back to the normal ticket category when valid;
-    // otherwise create the application at the server root instead of failing.
-    const candidateParentIds = [
-      config.applicationTicketCategoryId,
-      config.ticketCategoryId,
-    ].filter((id, index, arr) =>
-      id &&
-      typeof id === 'string' &&
-      !id.startsWith('PUT_') &&
-      arr.indexOf(id) === index
-    );
-
-    for (const candidateId of candidateParentIds) {
-      const candidate = await guild.channels.fetch(candidateId).catch(() => null);
-      if (candidate && candidate.type === ChannelType.GuildCategory) {
-        channelOptions.parent = candidateId;
-        break;
+      if (
+        parent &&
+        parent.type === ChannelType.GuildCategory
+      ) {
+        channelOptions.parent = parent.id;
+      } else {
+        console.warn(
+          `[APPLICATION] Parent ${parentId} is not a valid category.`
+        );
       }
     }
-
-
-    console.log(
-      '[APPLICATION] Creating application ticket:',
-      {
-        userId: user.id,
-        appId,
-        parentId:
-          channelOptions.parent ||
-          'none',
-        roles:
-          applicationRoleIds,
-      }
-    );
 
 
     const channel =
@@ -713,61 +663,38 @@ async function createApplicationTicket(
       );
 
 
-    /*
-      Build the application embed.
-
-      buildApplicationEmbed can throw if Discord
-      rejects one of the fields, so keep everything
-      inside this try block.
-    */
-
-    const embed =
+    const applicationEmbed =
       buildApplicationEmbed(
-        member,
+        member.user,
         appConfig,
         answers
       );
 
 
-    const decisionRow =
-      buildDecisionRow(
-        user.id,
-        appId
-      );
-
-
-    const mentions =
-      applicationRoleIds
-        .map(
-          (roleId) =>
-            `<@&${roleId}>`
-        )
-        .join(' ');
-
-
     await channel.send({
       content:
-        `${user} ${mentions}`.trim(),
+        `${member} ${roleIds
+          .map((id) => `<@&${id}>`)
+          .join(' ')}`.trim(),
 
       embeds: [
-        embed,
+        applicationEmbed,
       ],
 
       components: [
-        decisionRow,
-      ],
-    });
-
-
-    await channel.send({
-      components: [
+        buildDecisionRow(),
         buildTicketControlRow(),
       ],
     });
 
 
     console.log(
-      `[APPLICATION] Successfully created application ticket ${channel.id}`
+      '[APPLICATION] Application ticket created:',
+      {
+        channelId: channel.id,
+        userId: member.id,
+        appId,
+      }
     );
 
 
@@ -775,10 +702,10 @@ async function createApplicationTicket(
   }
 
 
-  catch (err) {
+  catch (error) {
     console.error(
       '[APPLICATION] Failed to create application ticket:',
-      err
+      error
     );
 
     return null;
@@ -790,9 +717,7 @@ async function createApplicationTicket(
    CLAIM TICKET
 ========================================================= */
 
-async function claimTicket(
-  interaction
-) {
+async function claimTicket(interaction) {
   const meta =
     parseTopic(
       interaction.channel.topic
@@ -803,15 +728,12 @@ async function claimTicket(
     return interaction.reply({
       content:
         'This does not look like a ticket channel.',
-
-      ephemeral:
-        true,
+      ephemeral: true,
     });
   }
 
 
-  const member =
-    interaction.member;
+  const member = interaction.member;
 
 
   let roleIds =
@@ -819,14 +741,6 @@ async function claimTicket(
       meta.categoryId
     );
 
-
-  /*
-    Application ticket topics use:
-    application_staff
-    application_pm
-
-    Fall back to application roles.
-  */
 
   if (
     meta.categoryId.startsWith(
@@ -841,9 +755,7 @@ async function claimTicket(
   const isTicketStaff =
     roleIds.some(
       (roleId) =>
-        member.roles.cache.has(
-          roleId
-        )
+        member.roles.cache.has(roleId)
     );
 
 
@@ -856,17 +768,137 @@ async function claimTicket(
     return interaction.reply({
       content:
         'Only ticket staff can claim tickets.',
-
-      ephemeral:
-        true,
+      ephemeral: true,
     });
   }
 
 
+  const claimButton =
+    interaction.message.components
+      .flatMap(
+        (row) =>
+          row.components
+      )
+      .find(
+        (component) =>
+          component.customId ===
+          'ticket_claim'
+      );
+
+
+  if (claimButton?.disabled) {
+    return interaction.reply({
+      content:
+        'This ticket has already been claimed.',
+      ephemeral: true,
+    });
+  }
+
+
+  /*
+    Hide the ticket from all other staff roles.
+
+    The ticket owner stays visible.
+    The staff member who claimed it stays visible.
+
+    Server Administrators can still see the ticket because
+    Administrator bypasses channel permission denies.
+  */
+
+  for (const roleId of roleIds) {
+    const role =
+      await interaction.guild.roles
+        .fetch(roleId)
+        .catch(() => null);
+
+
+    if (!role) {
+      console.warn(
+        `[TICKET] Could not fetch staff role ${roleId} while claiming.`
+      );
+
+      continue;
+    }
+
+
+    /*
+      Do NOT hide the role from the claimer if the claimer
+      is actually using that role.
+
+      Instead, give the claimer an explicit member overwrite
+      below, which overrides the role deny.
+    */
+
+    await interaction.channel
+      .permissionOverwrites
+      .edit(
+        role,
+        {
+          ViewChannel: false,
+          SendMessages: false,
+          ReadMessageHistory: false,
+        }
+      )
+      .catch(
+        (err) => {
+          console.error(
+            `[TICKET] Failed to hide ticket from role ${roleId}:`,
+            err
+          );
+        }
+      );
+  }
+
+
+  /*
+    Restore explicit access for ticket owner.
+  */
+
+  await interaction.channel
+    .permissionOverwrites
+    .edit(
+      meta.userId,
+      {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        AttachFiles: true,
+        EmbedLinks: true,
+      }
+    )
+    .catch(() => {});
+
+
+  /*
+    Restore explicit access for claimer.
+
+    Member overwrites take precedence over role overwrites.
+  */
+
+  await interaction.channel
+    .permissionOverwrites
+    .edit(
+      interaction.user.id,
+      {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        AttachFiles: true,
+        EmbedLinks: true,
+        ManageMessages: true,
+      }
+    )
+    .catch(() => {});
+
+
   const embed =
     new EmbedBuilder()
+      .setTitle(
+        '🙋 Ticket Claimed'
+      )
       .setDescription(
-        `🙋 This ticket has been claimed by ${interaction.user}.`
+        `This ticket has been claimed by ${interaction.user}.\n\n` +
+        'Other ticket staff can no longer see this ticket.'
       )
       .setColor(
         '#57F287'
@@ -899,18 +931,24 @@ async function claimTicket(
     interaction.guild,
     interaction.user.id,
     'ticketsHandled'
-  ).catch((err) => {
-    console.error(
-      'Failed to update staff tracker for ticket claim:',
-      err
-    );
-  });
+  ).catch(
+    (err) => {
+      console.error(
+        'Failed to update staff tracker for ticket claim:',
+        err
+      );
+    }
+  );
 }
 
 
 /* =========================================================
    CLOSE TICKET
 ========================================================= */
+
+const pendingTicketClosures =
+  new Map();
+
 
 async function closeTicket(
   interaction,
@@ -926,9 +964,7 @@ async function closeTicket(
     return interaction.reply({
       content:
         'This does not look like a ticket channel.',
-
-      ephemeral:
-        true,
+      ephemeral: true,
     });
   }
 
@@ -977,57 +1013,217 @@ async function closeTicket(
     return interaction.reply({
       content:
         'You do not have permission to close this ticket.',
-
-      ephemeral:
-        true,
+      ephemeral: true,
     });
   }
 
 
-  await interaction.deferReply();
+  if (
+    pendingTicketClosures.has(
+      interaction.channel.id
+    )
+  ) {
+    return interaction.reply({
+      content:
+        'This ticket is already waiting for the ticket owner to confirm closure.',
+      ephemeral: true,
+    });
+  }
 
 
-  const closeEmbed =
+  pendingTicketClosures.set(
+    interaction.channel.id,
+    {
+      reason:
+        reason || null,
+
+      closerId:
+        interaction.user.id,
+
+      requestedAt:
+        Date.now(),
+    }
+  );
+
+
+  const confirmationEmbed =
     new EmbedBuilder()
       .setTitle(
-        '🔒 Ticket Closing'
+        '🔒 Ticket Closure Requested'
       )
       .setDescription(
-        `Closed by ${interaction.user}.` +
-        (
-          reason
-            ? `\n**Reason:** ${reason}`
-            : ''
-        )
+        `This ticket was marked for closure by ${interaction.user}.\n\n` +
+        `<@${meta.userId}>, **has your issue been solved and would you like to close this ticket?**\n\n` +
+        'Please choose **Yes, close it** or **No, keep it open** below.'
       )
       .setColor(
-        '#ED4245'
+        '#FEE75C'
       )
       .setFooter({
         text:
-          `This channel will be deleted in ${
-            config.closeCountdownSeconds || 5
-          } seconds.`,
+          'Only the person who opened this ticket can confirm the closure.',
       });
 
 
-  await interaction.editReply({
+  const row =
+    new ActionRowBuilder()
+      .addComponents(
+
+        new ButtonBuilder()
+          .setCustomId(
+            'ticket_close_confirm'
+          )
+          .setLabel(
+            'Yes, close it'
+          )
+          .setEmoji(
+            '✅'
+          )
+          .setStyle(
+            ButtonStyle.Success
+          ),
+
+        new ButtonBuilder()
+          .setCustomId(
+            'ticket_close_cancel'
+          )
+          .setLabel(
+            'No, keep it open'
+          )
+          .setEmoji(
+            '❌'
+          )
+          .setStyle(
+            ButtonStyle.Secondary
+          )
+      );
+
+
+  if (
+    interaction.deferred ||
+    interaction.replied
+  ) {
+    await interaction.editReply({
+      embeds: [
+        confirmationEmbed,
+      ],
+
+      components: [
+        row,
+      ],
+    });
+  } else {
+    await interaction.reply({
+      embeds: [
+        confirmationEmbed,
+      ],
+
+      components: [
+        row,
+      ],
+    });
+  }
+}
+
+
+/* =========================================================
+   FINALIZE CLOSE
+========================================================= */
+
+async function finalizeCloseTicket(
+  interaction
+) {
+  const meta =
+    parseTopic(
+      interaction.channel.topic
+    );
+
+
+  if (!meta) {
+    return interaction.reply({
+      content:
+        'This does not look like a ticket channel.',
+      ephemeral: true,
+    });
+  }
+
+
+  if (
+    interaction.user.id !==
+    meta.userId
+  ) {
+    return interaction.reply({
+      content:
+        'Only the person who opened this ticket can confirm the closure.',
+      ephemeral: true,
+    });
+  }
+
+
+  const pending =
+    pendingTicketClosures.get(
+      interaction.channel.id
+    );
+
+
+  if (!pending) {
+    return interaction.reply({
+      content:
+        'There is no pending closure request for this ticket.',
+      ephemeral: true,
+    });
+  }
+
+
+  pendingTicketClosures.delete(
+    interaction.channel.id
+  );
+
+
+  await interaction.update({
     embeds: [
-      closeEmbed,
+      new EmbedBuilder()
+        .setTitle(
+          '🔒 Ticket Closing'
+        )
+        .setDescription(
+          `The ticket owner confirmed that the issue has been solved.\n\nClosed by ${interaction.user}.` +
+          (
+            pending.reason
+              ? `\n**Reason:** ${pending.reason}`
+              : ''
+          )
+        )
+        .setColor(
+          '#ED4245'
+        )
+        .setFooter({
+          text:
+            `This channel will be deleted in ${config.closeCountdownSeconds || 5} seconds.`,
+        }),
     ],
+
+    components: [],
   });
+
+
+  const closerId =
+    pending.closerId ||
+    interaction.user.id;
 
 
   incrementStat(
     interaction.guild,
-    interaction.user.id,
+    closerId,
     'ticketsClosed'
-  ).catch((err) => {
-    console.error(
-      'Failed to update staff tracker for ticket close:',
-      err
-    );
-  });
+  ).catch(
+    (err) => {
+      console.error(
+        'Failed to update staff tracker for ticket close:',
+        err
+      );
+    }
+  );
 
 
   if (
@@ -1036,11 +1232,12 @@ async function closeTicket(
   ) {
     incrementStat(
       interaction.guild,
-      interaction.user.id,
+      closerId,
       'partnersCompleted'
-    ).catch(() => {});
+    ).catch(
+      () => {}
+    );
   }
-
 
   else if (
     meta.categoryId ===
@@ -1048,9 +1245,11 @@ async function closeTicket(
   ) {
     incrementStat(
       interaction.guild,
-      interaction.user.id,
+      closerId,
       'giveawaysSponsored'
-    ).catch(() => {});
+    ).catch(
+      () => {}
+    );
   }
 
 
@@ -1073,9 +1272,7 @@ async function closeTicket(
     ) {
       const logChannel =
         await interaction.guild.channels
-          .fetch(
-            logChannelId
-          )
+          .fetch(logChannelId)
           .catch(
             () => null
           );
@@ -1091,6 +1288,7 @@ async function closeTicket(
               'Ticket Closed'
             )
             .addFields(
+
               {
                 name:
                   'Channel',
@@ -1118,6 +1316,17 @@ async function closeTicket(
                   'Closed by',
 
                 value:
+                  `<@${closerId}>`,
+
+                inline:
+                  true,
+              },
+
+              {
+                name:
+                  'Confirmed by',
+
+                value:
                   `${interaction.user}`,
 
                 inline:
@@ -1141,13 +1350,15 @@ async function closeTicket(
             .setTimestamp();
 
 
-        if (reason) {
+        if (
+          pending.reason
+        ) {
           logEmbed.addFields({
             name:
               'Reason',
 
             value:
-              reason.slice(
+              pending.reason.slice(
                 0,
                 1024
               ),
@@ -1167,10 +1378,6 @@ async function closeTicket(
       }
     }
 
-
-    /*
-      DM THE TRANSCRIPT TO THE USER
-    */
 
     const opener =
       await interaction.guild.members
@@ -1196,7 +1403,9 @@ async function closeTicket(
         files: [
           dmAttachment,
         ],
-      }).catch(() => {});
+      }).catch(
+        () => {}
+      );
     }
   }
 
@@ -1209,13 +1418,95 @@ async function closeTicket(
   }
 
 
-  setTimeout(() => {
-    interaction.channel
-      .delete()
-      .catch(() => {});
-  },
-  (config.closeCountdownSeconds || 5) * 1000
+  setTimeout(
+    () => {
+      interaction.channel
+        .delete()
+        .catch(
+          () => {}
+        );
+    },
+
+    (
+      config.closeCountdownSeconds ||
+      5
+    ) * 1000
   );
+}
+
+
+/* =========================================================
+   CANCEL CLOSE
+========================================================= */
+
+async function cancelCloseTicket(
+  interaction
+) {
+  const meta =
+    parseTopic(
+      interaction.channel.topic
+    );
+
+
+  if (!meta) {
+    return interaction.reply({
+      content:
+        'This does not look like a ticket channel.',
+      ephemeral: true,
+    });
+  }
+
+
+  if (
+    interaction.user.id !==
+    meta.userId
+  ) {
+    return interaction.reply({
+      content:
+        'Only the person who opened this ticket can cancel the closure.',
+      ephemeral: true,
+    });
+  }
+
+
+  if (
+    !pendingTicketClosures.has(
+      interaction.channel.id
+    )
+  ) {
+    return interaction.reply({
+      content:
+        'There is no pending closure request for this ticket.',
+      ephemeral: true,
+    });
+  }
+
+
+  pendingTicketClosures.delete(
+    interaction.channel.id
+  );
+
+
+  await interaction.update({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle(
+          '✅ Ticket Kept Open'
+        )
+        .setDescription(
+          `No problem, ${interaction.user}. Your ticket will remain open and staff can continue helping you.`
+        )
+        .setColor(
+          '#57F287'
+        ),
+    ],
+
+    components: [
+      buildTicketControlRow(
+        false
+      ),
+    ],
+  });
 }
 
 
@@ -1228,6 +1519,8 @@ module.exports = {
   createApplicationTicket,
   claimTicket,
   closeTicket,
+  finalizeCloseTicket,
+  cancelCloseTicket,
   parseTopic,
   buildTicketControlRow,
   findCategory,
