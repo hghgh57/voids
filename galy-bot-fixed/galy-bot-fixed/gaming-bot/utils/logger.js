@@ -22,26 +22,22 @@ const LOGGER_GUILD_ID =
 
 const LOG_CHANNELS = {
 
-  message:
-    'PUT_MESSAGE_LOG_CHANNEL_ID_HERE',
+  server:
+    '1542362270120681646',
+
+  tickets:
+    '1542362304669032549',
 
   member:
-    'PUT_MEMBER_LOG_CHANNEL_ID_HERE',
+    '1542364771138015334',
 
   moderation:
-    'PUT_MODERATION_LOG_CHANNEL_ID_HERE',
+    '1542364806818832475',
 
-  role:
-    'PUT_ROLE_LOG_CHANNEL_ID_HERE',
-
-  channel:
-    'PUT_CHANNEL_LOG_CHANNEL_ID_HERE',
-
-  server:
-    'PUT_SERVER_LOG_CHANNEL_ID_HERE',
+  message:
+    '1542364917829738496',
 
 };
-
 
 /* =========================================================
    HELPERS
