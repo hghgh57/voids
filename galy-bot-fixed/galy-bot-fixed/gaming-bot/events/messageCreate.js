@@ -12,6 +12,14 @@ const config =
 
 
 /* =========================================================
+   LOGGER SERVER
+========================================================= */
+
+const LOGGER_GUILD_ID =
+  '1542361762186268765';
+
+
+/* =========================================================
    PING PROTECTION
 ========================================================= */
 
@@ -124,7 +132,7 @@ module.exports = {
   ) {
 
     /*
-      Bots are ignored by the logger and sticky system.
+      Ignore bots.
     */
 
     if (
@@ -135,12 +143,26 @@ module.exports = {
 
 
     /*
-      Cross-server message log.
-
       IMPORTANT:
-      This is the ONLY place where messageCreate
-      calls logMessageCreate().
+
+      Never log messages that are sent inside the
+      logger server.
+
+      This prevents the logger from logging its own
+      log messages and creating duplicates/loops.
     */
+
+    if (
+      message.guild?.id ===
+      LOGGER_GUILD_ID
+    ) {
+      return;
+    }
+
+
+    /* =====================================================
+       CROSS-SERVER MESSAGE LOG
+    ===================================================== */
 
     try {
 
