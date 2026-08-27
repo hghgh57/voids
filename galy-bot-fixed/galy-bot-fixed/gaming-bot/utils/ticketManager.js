@@ -8,12 +8,25 @@ const {
 } = require('discord.js');
 
 const config = require('../config.json');
-const { buildTranscript } = require('./transcript');
+
+const { buildTranscript } =
+  require('./transcript');
+
 const {
   buildApplicationEmbed,
   buildDecisionRow,
-} = require('./applicationManager');
-const { incrementStat } = require('./staffTracker');
+} =
+  require('./applicationManager');
+
+const {
+  incrementStat,
+} =
+  require('./staffTracker');
+
+const {
+  logTicketClose,
+} =
+  require('./logger');
 
 
 /* =========================================================
@@ -21,11 +34,25 @@ const { incrementStat } = require('./staffTracker');
 ========================================================= */
 
 function parseTopic(topic) {
-  if (!topic || !topic.startsWith('ticket|')) return null;
+  if (
+    !topic ||
+    !topic.startsWith('ticket|')
+  ) {
+    return null;
+  }
 
-  const [, userId, categoryId] = topic.split('|');
+  const [
+    ,
+    userId,
+    categoryId,
+  ] = topic.split('|');
 
-  if (!userId || !categoryId) return null;
+  if (
+    !userId ||
+    !categoryId
+  ) {
+    return null;
+  }
 
   return {
     userId,
@@ -34,12 +61,24 @@ function parseTopic(topic) {
 }
 
 
-function countOpenTicketsForUser(guild, userId) {
-  return guild.channels.cache.filter((channel) => {
-    const meta = parseTopic(channel.topic);
+function countOpenTicketsForUser(
+  guild,
+  userId
+) {
+  return guild.channels.cache.filter(
+    (channel) => {
 
-    return meta && meta.userId === userId;
-  }).size;
+      const meta =
+        parseTopic(
+          channel.topic
+        );
+
+      return (
+        meta &&
+        meta.userId === userId
+      );
+    }
+  ).size;
 }
 
 
@@ -47,27 +86,51 @@ function countOpenTicketsForUser(guild, userId) {
    TICKET BUTTONS
 ========================================================= */
 
-function buildTicketControlRow(claimed = false) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('ticket_claim')
-      .setLabel(claimed ? 'Claimed' : 'Claim')
-      .setEmoji('🙋')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(claimed),
+function buildTicketControlRow(
+  claimed = false
+) {
+  return new ActionRowBuilder()
+    .addComponents(
 
-    new ButtonBuilder()
-      .setCustomId('ticket_close')
-      .setLabel('Close')
-      .setEmoji('🔒')
-      .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId(
+          'ticket_claim'
+        )
+        .setLabel(
+          claimed
+            ? 'Claimed'
+            : 'Claim'
+        )
+        .setEmoji('🙋')
+        .setStyle(
+          ButtonStyle.Secondary
+        )
+        .setDisabled(
+          claimed
+        ),
 
-    new ButtonBuilder()
-      .setCustomId('ticket_close_reason')
-      .setLabel('Close with Reason')
-      .setEmoji('📝')
-      .setStyle(ButtonStyle.Secondary)
-  );
+      new ButtonBuilder()
+        .setCustomId(
+          'ticket_close'
+        )
+        .setLabel('Close')
+        .setEmoji('🔒')
+        .setStyle(
+          ButtonStyle.Danger
+        ),
+
+      new ButtonBuilder()
+        .setCustomId(
+          'ticket_close_reason'
+        )
+        .setLabel(
+          'Close with Reason'
+        )
+        .setEmoji('📝')
+        .setStyle(
+          ButtonStyle.Secondary
+        )
+    );
 }
 
 
@@ -76,7 +139,9 @@ function buildTicketControlRow(claimed = false) {
 ========================================================= */
 
 function getTicketRoleIds() {
-  return (config.ticketRoleIds || []).filter(
+  return (
+    config.ticketRoleIds || []
+  ).filter(
     (id) =>
       id &&
       typeof id === 'string' &&
@@ -86,7 +151,9 @@ function getTicketRoleIds() {
 
 
 function getApplicationTicketRoleIds() {
-  return (config.applicationTicketRoleIds || []).filter(
+  return (
+    config.applicationTicketRoleIds || []
+  ).filter(
     (id) =>
       id &&
       typeof id === 'string' &&
@@ -96,12 +163,17 @@ function getApplicationTicketRoleIds() {
 
 
 function getServiceTicketRoleIds() {
-  const ids = (config.serviceTicketRoleIds || []).filter(
-    (id) =>
-      id &&
-      typeof id === 'string' &&
-      !id.startsWith('PUT_')
-  );
+
+  const ids =
+    (
+      config.serviceTicketRoleIds ||
+      []
+    ).filter(
+      (id) =>
+        id &&
+        typeof id === 'string' &&
+        !id.startsWith('PUT_')
+    );
 
   return ids.length
     ? ids
@@ -113,70 +185,99 @@ function getServiceTicketRoleIds() {
    CATEGORY HELPERS
 ========================================================= */
 
-function isApplicationTicket(categoryId) {
-  return (config.applications || []).some(
-    (application) =>
-      application.id === categoryId
-  );
-}
-
-
-function isServiceTicket(categoryId) {
-  return (config.serviceCategories || []).some(
-    (category) =>
-      category.id === categoryId
-  );
-}
-
-
-function findCategory(categoryId) {
+function isApplicationTicket(
+  categoryId
+) {
   return (
-    (config.categories || []).find(
+    config.applications || []
+  ).some(
+    (application) =>
+      application.id ===
+      categoryId
+  );
+}
+
+
+function isServiceTicket(
+  categoryId
+) {
+  return (
+    config.serviceCategories || []
+  ).some(
+    (category) =>
+      category.id ===
+      categoryId
+  );
+}
+
+
+function findCategory(
+  categoryId
+) {
+  return (
+    (
+      config.categories || []
+    ).find(
       (category) =>
-        category.id === categoryId
+        category.id ===
+        categoryId
     )
 
     ||
 
-    (config.serviceCategories || []).find(
+    (
+      config.serviceCategories || []
+    ).find(
       (category) =>
-        category.id === categoryId
+        category.id ===
+        categoryId
     )
   );
 }
 
 
-function getRoleIdsForTicket(categoryId) {
-  const category = findCategory(categoryId);
+function getRoleIdsForTicket(
+  categoryId
+) {
 
-  const categoryRoleIds = (
-    category?.roleIds || []
-  ).filter(
-    (id) =>
-      id &&
-      typeof id === 'string' &&
-      !id.startsWith('PUT_')
-  );
+  const category =
+    findCategory(
+      categoryId
+    );
 
-  /*
-    Service categories can have their own roles.
-    Example:
-    building_service -> builder role
-    digging_service -> digging role
-    regears_service -> regear role
-  */
+  const categoryRoleIds =
+    (
+      category?.roleIds ||
+      []
+    ).filter(
+      (id) =>
+        id &&
+        typeof id === 'string' &&
+        !id.startsWith('PUT_')
+    );
 
-  if (categoryRoleIds.length) {
+
+  if (
+    categoryRoleIds.length
+  ) {
     return categoryRoleIds;
   }
 
 
-  if (isApplicationTicket(categoryId)) {
+  if (
+    isApplicationTicket(
+      categoryId
+    )
+  ) {
     return getApplicationTicketRoleIds();
   }
 
 
-  if (isServiceTicket(categoryId)) {
+  if (
+    isServiceTicket(
+      categoryId
+    )
+  ) {
     return getServiceTicketRoleIds();
   }
 
@@ -194,35 +295,50 @@ async function createTicket(
   categoryId,
   answers = []
 ) {
-  const { guild, user } = interaction;
+
+  const {
+    guild,
+    user,
+  } = interaction;
+
 
   if (!guild) {
     return interaction.reply({
-      content: '❌ Tickets can only be created inside the server.',
+      content:
+        '❌ Tickets can only be created inside the server.',
       ephemeral: true,
     });
   }
 
 
-  const category = findCategory(categoryId);
+  const category =
+    findCategory(
+      categoryId
+    );
+
 
   if (!category) {
     return interaction.reply({
-      content: '❌ Unknown ticket category.',
+      content:
+        '❌ Unknown ticket category.',
       ephemeral: true,
     });
   }
 
 
-  const existing = countOpenTicketsForUser(
-    guild,
-    user.id
-  );
+  const existing =
+    countOpenTicketsForUser(
+      guild,
+      user.id
+    );
 
 
   if (
     existing >=
-    (config.maxOpenTicketsPerUser || 2)
+    (
+      config.maxOpenTicketsPerUser ||
+      2
+    )
   ) {
     return interaction.reply({
       content:
@@ -240,7 +356,8 @@ async function createTicket(
 
   const permissionOverwrites = [
     {
-      id: guild.roles.everyone.id,
+      id:
+        guild.roles.everyone.id,
 
       deny: [
         PermissionsBitField.Flags.ViewChannel,
@@ -248,7 +365,8 @@ async function createTicket(
     },
 
     {
-      id: user.id,
+      id:
+        user.id,
 
       allow: [
         PermissionsBitField.Flags.ViewChannel,
@@ -261,17 +379,13 @@ async function createTicket(
   ];
 
 
-  /*
-    Give the bot explicit access.
+  if (
+    interaction.client.user
+  ) {
 
-    Use client.user.id instead of guild.members.me.id
-    because guild.members.me can occasionally be null/not
-    cached when the bot is starting.
-  */
-
-  if (interaction.client.user) {
     permissionOverwrites.push({
-      id: interaction.client.user.id,
+      id:
+        interaction.client.user.id,
 
       allow: [
         PermissionsBitField.Flags.ViewChannel,
@@ -287,12 +401,18 @@ async function createTicket(
 
 
   const staffRoleIds =
-    getRoleIdsForTicket(categoryId);
+    getRoleIdsForTicket(
+      categoryId
+    );
 
 
-  for (const roleId of staffRoleIds) {
+  for (
+    const roleId of staffRoleIds
+  ) {
+
     permissionOverwrites.push({
-      id: roleId,
+      id:
+        roleId,
 
       allow: [
         PermissionsBitField.Flags.ViewChannel,
@@ -309,16 +429,25 @@ async function createTicket(
   const safeName =
     user.username
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, '')
-      .slice(0, 20)
+      .replace(
+        /[^a-z0-9]/g,
+        ''
+      )
+      .slice(
+        0,
+        20
+      )
     ||
     'user';
 
 
   const channelOptions = {
-    name: `ticket-${safeName}`,
 
-    type: ChannelType.GuildText,
+    name:
+      `ticket-${safeName}`,
+
+    type:
+      ChannelType.GuildText,
 
     topic:
       `ticket|${user.id}|${categoryId}`,
@@ -327,34 +456,53 @@ async function createTicket(
   };
 
 
-  /*
-    SERVICE TICKETS
+  const requestedParentId =
+    isServiceTicket(
+      categoryId
+    )
+      ? config.serviceTicketCategoryId
+      : config.ticketCategoryId;
 
-    building_service
-    digging_service
-    regears_service
 
-    all go into:
-    config.serviceTicketCategoryId
-  */
+  if (
+    requestedParentId &&
+    typeof requestedParentId ===
+      'string' &&
+    !requestedParentId.startsWith(
+      'PUT_'
+    )
+  ) {
 
-  const requestedParentId = isServiceTicket(categoryId)
-    ? config.serviceTicketCategoryId
-    : config.ticketCategoryId;
+    const parent =
+      await guild.channels
+        .fetch(
+          requestedParentId
+        )
+        .catch(
+          () => null
+        );
 
-  // Do not blindly pass a stale/non-category channel ID as parent.
-  // If it is invalid, Discord can reject channel creation completely.
-  if (requestedParentId && typeof requestedParentId === 'string' && !requestedParentId.startsWith('PUT_')) {
-    const parent = await guild.channels.fetch(requestedParentId).catch(() => null);
-    if (parent && parent.type === ChannelType.GuildCategory) {
-      channelOptions.parent = requestedParentId;
+
+    if (
+      parent &&
+      parent.type ===
+        ChannelType.GuildCategory
+    ) {
+
+      channelOptions.parent =
+        requestedParentId;
+
     } else {
-      console.warn(`[TICKET] Configured parent ${requestedParentId} is not a valid category; creating at server root.`);
+
+      console.warn(
+        `[TICKET] Configured parent ${requestedParentId} is not a valid category; creating at server root.`
+      );
     }
   }
 
 
   try {
+
     const channel =
       await guild.channels.create(
         channelOptions
@@ -381,20 +529,31 @@ async function createTicket(
         .setTimestamp();
 
 
-    if (answers.length) {
-      welcomeEmbed.addFields(
-        answers.map((answer) => ({
-          name:
-            String(
-              answer.question
-            ).slice(0, 256),
+    if (
+      answers.length
+    ) {
 
-          value:
-            String(
-              answer.answer ||
-              'No answer'
-            ).slice(0, 1024),
-        }))
+      welcomeEmbed.addFields(
+        answers.map(
+          (answer) => ({
+            name:
+              String(
+                answer.question
+              ).slice(
+                0,
+                256
+              ),
+
+            value:
+              String(
+                answer.answer ||
+                'No answer'
+              ).slice(
+                0,
+                1024
+              ),
+          })
+        )
       );
     }
 
@@ -431,8 +590,8 @@ async function createTicket(
     return channel;
   }
 
-
   catch (err) {
+
     console.error(
       'Failed to create ticket:',
       err
@@ -445,7 +604,9 @@ async function createTicket(
           '❌ Something went wrong creating your ticket. ' +
           'Please contact staff.',
       })
-      .catch(() => {});
+      .catch(
+        () => {}
+      );
 
 
     return null;
@@ -454,7 +615,7 @@ async function createTicket(
 
 
 /* =========================================================
-   CREATE APPLICATION TICKET
+   APPLICATION TICKET
 ========================================================= */
 
 async function createApplicationTicket(
@@ -464,7 +625,9 @@ async function createApplicationTicket(
   appConfig,
   answers
 ) {
+
   try {
+
     if (!guild) {
       throw new Error(
         'Missing guild when creating application ticket.'
@@ -497,15 +660,6 @@ async function createApplicationTicket(
       member.user;
 
 
-    /*
-      Applications are staff-only tickets.
-
-      The applicant can see the channel so they can
-      see that their application exists.
-
-      Application staff roles can access it too.
-    */
-
     const permissionOverwrites = [
       {
         id:
@@ -531,14 +685,6 @@ async function createApplicationTicket(
     ];
 
 
-    /*
-      Explicit bot permissions.
-
-      This fixes the problem where the channel could
-      be created but the bot failed when trying to
-      send the application embed.
-    */
-
     const botId =
       guild.members.me?.id ||
       guild.client.user?.id;
@@ -552,7 +698,8 @@ async function createApplicationTicket(
 
 
     permissionOverwrites.push({
-      id: botId,
+      id:
+        botId,
 
       allow: [
         PermissionsBitField.Flags.ViewChannel,
@@ -570,16 +717,13 @@ async function createApplicationTicket(
       getApplicationTicketRoleIds();
 
 
-    /*
-      Add configured application staff roles.
-    */
-
     for (
-      const roleId
-      of applicationRoleIds
+      const roleId of applicationRoleIds
     ) {
+
       permissionOverwrites.push({
-        id: roleId,
+        id:
+          roleId,
 
         allow: [
           PermissionsBitField.Flags.ViewChannel,
@@ -593,15 +737,6 @@ async function createApplicationTicket(
     }
 
 
-    /*
-      Also allow the general support/admin roles.
-
-      This prevents your application channel from
-      being inaccessible if applicationTicketRoleIds
-      was changed or the application staff role does
-      not have the required channel access.
-    */
-
     const extraRoleIds = [
       ...(config.supportRoleIds || []),
       ...(config.adminRoleIds || []),
@@ -610,16 +745,19 @@ async function createApplicationTicket(
         roleId &&
         typeof roleId === 'string' &&
         !roleId.startsWith('PUT_') &&
-        !applicationRoleIds.includes(roleId)
+        !applicationRoleIds.includes(
+          roleId
+        )
     );
 
 
     for (
-      const roleId
-      of extraRoleIds
+      const roleId of extraRoleIds
     ) {
+
       permissionOverwrites.push({
-        id: roleId,
+        id:
+          roleId,
 
         allow: [
           PermissionsBitField.Flags.ViewChannel,
@@ -634,13 +772,20 @@ async function createApplicationTicket(
     const safeName =
       user.username
         .toLowerCase()
-        .replace(/[^a-z0-9]/g, '')
-        .slice(0, 20)
+        .replace(
+          /[^a-z0-9]/g,
+          ''
+        )
+        .slice(
+          0,
+          20
+        )
       ||
       'user';
 
 
     const channelOptions = {
+
       name:
         `app-${safeName}`,
 
@@ -654,40 +799,41 @@ async function createApplicationTicket(
     };
 
 
-    /*
-      APPLICATION CATEGORY PRIORITY
-
-      1. reviewChannelId if it is actually a category
-      2. applicationTicketCategoryId
-      3. ticketCategoryId
-
-      Your config currently has:
-      applicationTicketCategoryId:
-      1533068861174452255
-
-      so the application will go there.
-    */
-
-    // Only use a parent ID if it actually points to a Discord category.
-    // A deleted channel, text channel ID, or stale config ID causes
-    // guild.channels.create() to fail and was the reason the DM flow could
-    // end with "I couldn't open a ticket". If the configured application
-    // parent is invalid, fall back to the normal ticket category when valid;
-    // otherwise create the application at the server root instead of failing.
     const candidateParentIds = [
       config.applicationTicketCategoryId,
       config.ticketCategoryId,
-    ].filter((id, index, arr) =>
-      id &&
-      typeof id === 'string' &&
-      !id.startsWith('PUT_') &&
-      arr.indexOf(id) === index
+    ].filter(
+      (id, index, arr) =>
+        id &&
+        typeof id === 'string' &&
+        !id.startsWith('PUT_') &&
+        arr.indexOf(id) === index
     );
 
-    for (const candidateId of candidateParentIds) {
-      const candidate = await guild.channels.fetch(candidateId).catch(() => null);
-      if (candidate && candidate.type === ChannelType.GuildCategory) {
-        channelOptions.parent = candidateId;
+
+    for (
+      const candidateId of candidateParentIds
+    ) {
+
+      const candidate =
+        await guild.channels
+          .fetch(
+            candidateId
+          )
+          .catch(
+            () => null
+          );
+
+
+      if (
+        candidate &&
+        candidate.type ===
+          ChannelType.GuildCategory
+      ) {
+
+        channelOptions.parent =
+          candidateId;
+
         break;
       }
     }
@@ -696,7 +842,8 @@ async function createApplicationTicket(
     console.log(
       '[APPLICATION] Creating application ticket:',
       {
-        userId: user.id,
+        userId:
+          user.id,
         appId,
         parentId:
           channelOptions.parent ||
@@ -712,14 +859,6 @@ async function createApplicationTicket(
         channelOptions
       );
 
-
-    /*
-      Build the application embed.
-
-      buildApplicationEmbed can throw if Discord
-      rejects one of the fields, so keep everything
-      inside this try block.
-    */
 
     const embed =
       buildApplicationEmbed(
@@ -774,8 +913,8 @@ async function createApplicationTicket(
     return channel;
   }
 
-
   catch (err) {
+
     console.error(
       '[APPLICATION] Failed to create application ticket:',
       err
@@ -793,10 +932,12 @@ async function createApplicationTicket(
 async function claimTicket(
   interaction
 ) {
+
   const meta =
     parseTopic(
       interaction.channel.topic
     );
+
 
   if (!meta) {
     return interaction.reply({
@@ -806,12 +947,16 @@ async function claimTicket(
     });
   }
 
-  const member = interaction.member;
+
+  const member =
+    interaction.member;
+
 
   let roleIds =
     getRoleIdsForTicket(
       meta.categoryId
     );
+
 
   if (
     meta.categoryId.startsWith(
@@ -822,6 +967,7 @@ async function claimTicket(
       getApplicationTicketRoleIds();
   }
 
+
   const isTicketStaff =
     roleIds.some(
       (roleId) =>
@@ -829,6 +975,7 @@ async function claimTicket(
           roleId
         )
     );
+
 
   if (
     !isTicketStaff &&
@@ -843,62 +990,73 @@ async function claimTicket(
     });
   }
 
-  // Hide this ticket from all configured staff roles.
-  // The claimer gets an explicit member overwrite below,
-  // which takes precedence over the role deny.
-  for (const roleId of roleIds) {
-    const role = await interaction.guild.roles
-      .fetch(roleId)
-      .catch(() => null);
+
+  for (
+    const roleId of roleIds
+  ) {
+
+    const role =
+      await interaction.guild.roles
+        .fetch(
+          roleId
+        )
+        .catch(
+          () => null
+        );
+
 
     if (!role) {
-      console.warn(
-        `[TICKET] Could not fetch staff role ${roleId} while claiming.`
-      );
       continue;
     }
 
+
     await interaction.channel.permissionOverwrites
-      .edit(role.id, {
-        ViewChannel: false,
-        SendMessages: false,
-        ReadMessageHistory: false,
-      })
-      .catch((err) => {
-        console.error(
-          `[TICKET] Failed to hide ticket from role ${roleId}:`,
-          err
-        );
-      });
+      .edit(
+        role.id,
+        {
+          ViewChannel: false,
+          SendMessages: false,
+          ReadMessageHistory: false,
+        }
+      )
+      .catch(
+        () => {}
+      );
   }
 
-  // Keep the ticket owner in the channel.
-  await interaction.channel.permissionOverwrites
-    .edit(meta.userId, {
-      ViewChannel: true,
-      SendMessages: true,
-      ReadMessageHistory: true,
-      AttachFiles: true,
-      EmbedLinks: true,
-    })
-    .catch(() => {});
 
-  // Keep the person who claimed the ticket in the channel.
   await interaction.channel.permissionOverwrites
-    .edit(interaction.user.id, {
-      ViewChannel: true,
-      SendMessages: true,
-      ReadMessageHistory: true,
-      AttachFiles: true,
-      EmbedLinks: true,
-      ManageMessages: true,
-    })
-    .catch((err) => {
-      console.error(
-        '[TICKET] Failed to give claimer access:',
-        err
-      );
-    });
+    .edit(
+      meta.userId,
+      {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        AttachFiles: true,
+        EmbedLinks: true,
+      }
+    )
+    .catch(
+      () => {}
+    );
+
+
+  await interaction.channel.permissionOverwrites
+    .edit(
+      interaction.user.id,
+      {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        AttachFiles: true,
+        EmbedLinks: true,
+        ManageMessages: true,
+      }
+    )
+    .catch(
+      () => {}
+    );
+
 
   const embed =
     new EmbedBuilder()
@@ -909,56 +1067,60 @@ async function claimTicket(
         '#57F287'
       );
 
+
   await interaction.reply({
     embeds: [
       embed,
     ],
   });
 
-  const disabledRow =
-    buildTicketControlRow(
-      true
-    );
 
   await interaction.message
     .edit({
       components: [
-        disabledRow,
+        buildTicketControlRow(
+          true
+        ),
       ],
     })
-    .catch(() => {});
+    .catch(
+      () => {}
+    );
+
 
   incrementStat(
     interaction.guild,
     interaction.user.id,
     'ticketsHandled'
-  ).catch((err) => {
-    console.error(
-      'Failed to update staff tracker for ticket claim:',
-      err
-    );
-  });
+  ).catch(
+    (err) => {
+      console.error(
+        'Failed to update staff tracker for ticket claim:',
+        err
+      );
+    }
+  );
 }
 
-/* =========================================================
-   CLOSE TICKET
-========================================================= */
-
-const pendingTicketClosures = new Map();
-
 
 /* =========================================================
    CLOSE TICKET
 ========================================================= */
+
+const pendingTicketClosures =
+  new Map();
+
 
 async function closeTicket(
   interaction,
   reason
 ) {
+
   const meta =
     parseTopic(
       interaction.channel.topic
     );
+
 
   if (!meta) {
     return interaction.reply({
@@ -968,13 +1130,16 @@ async function closeTicket(
     });
   }
 
+
   const member =
     interaction.member;
+
 
   let roleIds =
     getRoleIdsForTicket(
       meta.categoryId
     );
+
 
   if (
     meta.categoryId.startsWith(
@@ -985,6 +1150,7 @@ async function closeTicket(
       getApplicationTicketRoleIds();
   }
 
+
   const isTicketStaff =
     roleIds.some(
       (roleId) =>
@@ -993,9 +1159,11 @@ async function closeTicket(
         )
     );
 
+
   const isOwner =
     member.id ===
     meta.userId;
+
 
   if (
     !isTicketStaff &&
@@ -1011,6 +1179,7 @@ async function closeTicket(
     });
   }
 
+
   if (
     pendingTicketClosures.has(
       interaction.channel.id
@@ -1023,15 +1192,18 @@ async function closeTicket(
     });
   }
 
+
   pendingTicketClosures.set(
     interaction.channel.id,
     {
       reason:
         reason || null,
+
       closerId:
         interaction.user.id,
     }
   );
+
 
   const confirmationEmbed =
     new EmbedBuilder()
@@ -1051,9 +1223,11 @@ async function closeTicket(
           'Only the person who opened this ticket can confirm the closure.',
       });
 
+
   const row =
     new ActionRowBuilder()
       .addComponents(
+
         new ButtonBuilder()
           .setCustomId(
             'ticket_close_confirm'
@@ -1065,6 +1239,7 @@ async function closeTicket(
           .setStyle(
             ButtonStyle.Success
           ),
+
         new ButtonBuilder()
           .setCustomId(
             'ticket_close_cancel'
@@ -1078,42 +1253,120 @@ async function closeTicket(
           )
       );
 
-  if (
-    interaction.deferred ||
-    interaction.replied
-  ) {
-    await interaction.editReply({
-      embeds: [
-        confirmationEmbed,
-      ],
-      components: [
-        row,
-      ],
-    });
-  } else {
-    await interaction.reply({
-      embeds: [
-        confirmationEmbed,
-      ],
-      components: [
-        row,
-      ],
-    });
-  }
+
+  await interaction.reply({
+    embeds: [
+      confirmationEmbed,
+    ],
+    components: [
+      row,
+    ],
+  });
 }
 
 
 /* =========================================================
-   FINALIZE CLOSE TICKET
+   FINALIZE CLOSE
 ========================================================= */
 
 async function finalizeCloseTicket(
   interaction
 ) {
+
+  return performTicketClose(
+    interaction,
+    {
+      forced: false,
+    }
+  );
+}
+
+
+/* =========================================================
+   FORCE CLOSE
+========================================================= */
+
+async function forceCloseTicket(
+  interaction
+) {
+
   const meta =
     parseTopic(
       interaction.channel.topic
     );
+
+
+  if (!meta) {
+    return interaction.reply({
+      content:
+        '❌ This does not look like a ticket channel.',
+      ephemeral: true,
+    });
+  }
+
+
+  const isAdminRole =
+    (
+      config.adminRoleIds ||
+      []
+    ).some(
+      (roleId) =>
+        roleId &&
+        !roleId.startsWith('PUT_') &&
+        interaction.member.roles.cache.has(
+          roleId
+        )
+    );
+
+
+  const isAdministrator =
+    interaction.member.permissions.has(
+      PermissionsBitField.Flags.Administrator
+    );
+
+
+  if (
+    !isAdminRole &&
+    !isAdministrator
+  ) {
+    return interaction.reply({
+      content:
+        '❌ Only administrators can force close tickets.',
+      ephemeral: true,
+    });
+  }
+
+
+  pendingTicketClosures.delete(
+    interaction.channel.id
+  );
+
+
+  return performTicketClose(
+    interaction,
+    {
+      forced: true,
+      reason:
+        'Force closed by administrator.',
+    }
+  );
+}
+
+
+/* =========================================================
+   ACTUAL CLOSE PROCESS
+========================================================= */
+
+async function performTicketClose(
+  interaction,
+  options = {}
+) {
+
+  const meta =
+    parseTopic(
+      interaction.channel.topic
+    );
+
 
   if (!meta) {
     return interaction.reply({
@@ -1123,46 +1376,80 @@ async function finalizeCloseTicket(
     });
   }
 
-  if (
-    interaction.user.id !==
-    meta.userId
-  ) {
-    return interaction.reply({
-      content:
-        'Only the person who opened this ticket can confirm the closure.',
-      ephemeral: true,
-    });
-  }
 
-  const pending =
+  const forced =
+    options.forced === true;
+
+
+  let pending =
     pendingTicketClosures.get(
       interaction.channel.id
     );
 
-  if (!pending) {
-    return interaction.reply({
-      content:
-        'There is no pending closure request for this ticket.',
-      ephemeral: true,
-    });
+
+  if (!forced) {
+
+    if (
+      interaction.user.id !==
+      meta.userId
+    ) {
+      return interaction.reply({
+        content:
+          'Only the person who opened this ticket can confirm the closure.',
+        ephemeral: true,
+      });
+    }
+
+
+    if (!pending) {
+      return interaction.reply({
+        content:
+          'There is no pending closure request for this ticket.',
+        ephemeral: true,
+      });
+    }
+
+  } else {
+
+    pending =
+      pending || {
+        reason:
+          options.reason ||
+          null,
+
+        closerId:
+          interaction.user.id,
+      };
   }
+
 
   pendingTicketClosures.delete(
     interaction.channel.id
   );
 
+
+  const closerId =
+    pending.closerId ||
+    interaction.user.id;
+
+
+  const confirmedBy =
+    forced
+      ? null
+      : interaction.user.id;
+
+
   const closeEmbed =
     new EmbedBuilder()
       .setTitle(
-        '🔒 Ticket Closing'
+        forced
+          ? '⚡ Ticket Force Closing'
+          : '🔒 Ticket Closing'
       )
       .setDescription(
-        `The ticket owner confirmed that their issue has been solved.\n\nClosed by ${interaction.user}.` +
-        (
-          pending.reason
-            ? `\n**Reason:** ${pending.reason}`
-            : ''
-        )
+        forced
+          ? `This ticket was force closed by ${interaction.user}.`
+          : `The ticket owner confirmed that their issue has been solved.\n\nClosed by ${interaction.user}.`
       )
       .setColor(
         '#ED4245'
@@ -1172,60 +1459,150 @@ async function finalizeCloseTicket(
           `This channel will be deleted in ${config.closeCountdownSeconds || 5} seconds.`,
       });
 
-  await interaction.update({
-    embeds: [
-      closeEmbed,
-    ],
-    components: [],
-  });
 
-  // Count the staff member who requested the close, not the user
-  // who merely confirmed it.
-  const closerId =
-    pending.closerId ||
-    interaction.user.id;
+  if (
+    pending.reason
+  ) {
+
+    closeEmbed.addFields({
+      name:
+        'Reason',
+
+      value:
+        String(
+          pending.reason
+        ).slice(
+          0,
+          1024
+        ),
+    });
+  }
+
+
+  if (
+    interaction.replied ||
+    interaction.deferred
+  ) {
+
+    await interaction.editReply({
+      embeds: [
+        closeEmbed,
+      ],
+      components: [],
+    }).catch(
+      () => {}
+    );
+
+  } else {
+
+    await interaction.reply({
+      embeds: [
+        closeEmbed,
+      ],
+      components: [],
+    });
+  }
+
+
+  /*
+    IMPORTANT STAFF TRACKER FIX
+
+    The staff member who requested the close
+    gets the ticketsClosed stat.
+
+    For /forceclose, the admin using the command
+    gets the stat.
+  */
 
   incrementStat(
     interaction.guild,
     closerId,
     'ticketsClosed'
-  ).catch((err) => {
-    console.error(
-      'Failed to update staff tracker for ticket close:',
-      err
-    );
-  });
+  ).catch(
+    (err) => {
+      console.error(
+        'Failed to update staff tracker for ticket close:',
+        err
+      );
+    }
+  );
+
 
   if (
     meta.categoryId ===
     'partner'
   ) {
+
     incrementStat(
       interaction.guild,
       closerId,
       'partnersCompleted'
-    ).catch(() => {});
+    ).catch(
+      () => {}
+    );
   }
+
 
   else if (
     meta.categoryId ===
     'giveaway_sponsor'
   ) {
+
     incrementStat(
       interaction.guild,
       closerId,
       'giveawaysSponsored'
-    ).catch(() => {});
+    ).catch(
+      () => {}
+    );
   }
 
+
+  /*
+    CROSS-SERVER TICKET LOG
+  */
+
+  logTicketClose(
+    interaction.client,
+    {
+      channelName:
+        interaction.channel.name,
+
+      ownerId:
+        meta.userId,
+
+      closerId,
+
+      confirmedBy,
+
+      forced,
+
+      categoryId:
+        meta.categoryId,
+
+      reason:
+        pending.reason,
+    }
+  ).catch(
+    () => {}
+  );
+
+
+  /*
+    EXISTING TRANSCRIPT SYSTEM
+  */
+
   try {
+
     const attachment =
       await buildTranscript(
         interaction.channel
       );
 
+
     const logChannelId =
       config.transcriptLogChannelId;
+
 
     if (
       logChannelId &&
@@ -1233,6 +1610,7 @@ async function finalizeCloseTicket(
         'PUT_'
       )
     ) {
+
       const logChannel =
         await interaction.guild.channels
           .fetch(
@@ -1242,10 +1620,12 @@ async function finalizeCloseTicket(
             () => null
           );
 
+
       if (
         logChannel &&
         logChannel.isTextBased()
       ) {
+
         const logEmbed =
           new EmbedBuilder()
             .setTitle(
@@ -1255,36 +1635,52 @@ async function finalizeCloseTicket(
               {
                 name:
                   'Channel',
+
                 value:
                   `#${interaction.channel.name}`,
+
                 inline: true,
               },
+
               {
                 name:
                   'Opened by',
+
                 value:
                   `<@${meta.userId}>`,
+
                 inline: true,
               },
+
               {
                 name:
                   'Closed by',
+
                 value:
                   `<@${closerId}>`,
+
                 inline: true,
               },
+
               {
                 name:
                   'Confirmed by',
+
                 value:
-                  `${interaction.user}`,
+                  confirmedBy
+                    ? `<@${confirmedBy}>`
+                    : 'Admin force close',
+
                 inline: true,
               },
+
               {
                 name:
                   'Category',
+
                 value:
                   meta.categoryId,
+
                 inline: true,
               }
             )
@@ -1293,28 +1689,38 @@ async function finalizeCloseTicket(
             )
             .setTimestamp();
 
-        if (pending.reason) {
+
+        if (
+          pending.reason
+        ) {
+
           logEmbed.addFields({
             name:
               'Reason',
+
             value:
-              pending.reason.slice(
+              String(
+                pending.reason
+              ).slice(
                 0,
                 1024
               ),
           });
         }
 
+
         await logChannel.send({
           embeds: [
             logEmbed,
           ],
+
           files: [
             attachment,
           ],
         });
       }
     }
+
 
     const opener =
       await interaction.guild.members
@@ -1325,50 +1731,70 @@ async function finalizeCloseTicket(
           () => null
         );
 
+
     if (opener) {
+
       const dmAttachment =
         await buildTranscript(
           interaction.channel
         );
 
+
       await opener.send({
         content:
           'Here is a transcript of your closed ticket.',
+
         files: [
           dmAttachment,
         ],
-      }).catch(() => {});
+      }).catch(
+        () => {}
+      );
     }
+
   }
 
   catch (err) {
+
     console.error(
       'Failed to build/send transcript:',
       err
     );
   }
 
-  setTimeout(() => {
-    interaction.channel
-      .delete()
-      .catch(() => {});
-  },
-  (config.closeCountdownSeconds || 5) * 1000
+
+  setTimeout(
+    () => {
+
+      interaction.channel
+        .delete()
+        .catch(
+          () => {}
+        );
+
+    },
+
+    (
+      config.closeCountdownSeconds ||
+      5
+    ) * 1000
   );
 }
 
 
 /* =========================================================
-   CANCEL CLOSE TICKET
+   CANCEL CLOSE
 ========================================================= */
 
 async function cancelCloseTicket(
   interaction
 ) {
+
   const meta =
     parseTopic(
       interaction.channel.topic
     );
+
 
   if (!meta) {
     return interaction.reply({
@@ -1377,6 +1803,7 @@ async function cancelCloseTicket(
       ephemeral: true,
     });
   }
+
 
   if (
     interaction.user.id !==
@@ -1388,6 +1815,7 @@ async function cancelCloseTicket(
       ephemeral: true,
     });
   }
+
 
   if (
     !pendingTicketClosures.has(
@@ -1401,9 +1829,11 @@ async function cancelCloseTicket(
     });
   }
 
+
   pendingTicketClosures.delete(
     interaction.channel.id
   );
+
 
   await interaction.update({
     embeds: [
@@ -1418,6 +1848,7 @@ async function cancelCloseTicket(
           '#57F287'
         ),
     ],
+
     components: [
       buildTicketControlRow(
         false
@@ -1426,19 +1857,32 @@ async function cancelCloseTicket(
   });
 }
 
+
 /* =========================================================
    EXPORTS
 ========================================================= */
 
 module.exports = {
+
   createTicket,
+
   createApplicationTicket,
+
   claimTicket,
+
   closeTicket,
+
   finalizeCloseTicket,
+
   cancelCloseTicket,
+
+  forceCloseTicket,
+
   parseTopic,
+
   buildTicketControlRow,
+
   findCategory,
+
   isServiceTicket,
 };
