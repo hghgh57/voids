@@ -15,27 +15,41 @@ module.exports = {
 
   data:
     new SlashCommandBuilder()
-      .setName('forceclose')
+      .setName(
+        'forceclose'
+      )
       .setDescription(
         'Force close the current ticket without owner confirmation.'
       ),
 
-  async execute(interaction) {
 
-    if (!interaction.guild) {
+  async execute(
+    interaction
+  ) {
+
+    if (
+      !interaction.guild
+    ) {
+
       return interaction.reply({
         content:
           '❌ This command can only be used in a server.',
-        ephemeral: true,
+        ephemeral:
+          true,
       });
     }
 
 
     const isAdminRole =
-      (config.adminRoleIds || []).some(
+      (
+        config.adminRoleIds ||
+        []
+      ).some(
         (roleId) =>
           roleId &&
-          !roleId.startsWith('PUT_') &&
+          !roleId.startsWith(
+            'PUT_'
+          ) &&
           interaction.member.roles.cache.has(
             roleId
           )
@@ -52,10 +66,12 @@ module.exports = {
       !isAdminRole &&
       !isAdministrator
     ) {
+
       return interaction.reply({
         content:
           '❌ Only administrators can force close tickets.',
-        ephemeral: true,
+        ephemeral:
+          true,
       });
     }
 
