@@ -3,30 +3,50 @@ const {
   AuditLogEvent,
 } = require('discord.js');
 
-const config = require('../config.json');
+const config =
+  require('../config.json');
 
 
 /* =========================================================
-   LOGGER HELPERS
+   SETTINGS
 ========================================================= */
 
 function loggingEnabled() {
+
   return (
     config.logging?.enabled === true
   );
 }
 
 
-function getLogChannelId(type) {
-  return config.logging?.channels?.[type];
+function getLogChannelId(
+  type
+) {
+
+  return config
+    .logging
+    ?.channels
+    ?.[type];
 }
 
 
-async function getLogChannel(client, type) {
-  if (!loggingEnabled()) return null;
+async function getLogChannel(
+  client,
+  type
+) {
+
+  if (
+    !loggingEnabled()
+  ) {
+    return null;
+  }
+
 
   const channelId =
-    getLogChannelId(type);
+    getLogChannelId(
+      type
+    );
+
 
   if (
     !channelId ||
@@ -35,59 +55,170 @@ async function getLogChannel(client, type) {
     return null;
   }
 
-  return client.channels
-    .fetch(channelId)
-    .catch(() => null);
+
+  const channel =
+    await client.channels
+      .fetch(
+        channelId
+      )
+      .catch(
+        () => null
+      );
+
+
+  if (
+    !channel ||
+    !channel.isTextBased()
+  ) {
+    return null;
+  }
+
+
+  /*
+    If a logGuildId is configured, make sure the
+    destination channel is actually in that server.
+  */
+
+  const configuredLogGuildId =
+    config.logging?.logGuildId;
+
+
+  if (
+    configuredLogGuildId &&
+    channel.guildId &&
+    channel.guildId !==
+      configuredLogGuildId
+  ) {
+
+    console.error(
+      `[LOGGER] Channel ${channelId} is not inside configured log guild ${configuredLogGuildId}.`
+    );
+
+    return null;
+  }
+
+
+  return channel;
 }
 
 
-function clip(value, length = 1024) {
-  if (value === null || value === undefined) {
+/* =========================================================
+   SAFE TEXT
+========================================================= */
+
+function clip(
+  value,
+  length = 1024
+) {
+
+  if (
+    value === null ||
+    value === undefined
+  ) {
     return 'None';
   }
 
-  const text = String(value);
 
-  if (!text.length) {
+  const text =
+    String(value);
+
+
+  if (
+    !text.length
+  ) {
     return 'None';
   }
 
-  return text.slice(0, length);
+
+  return text.slice(
+    0,
+    length
+  );
 }
 
 
-function userText(user) {
-  if (!user) return 'Unknown';
+function userText(
+  user
+) {
 
-  return `${user.tag || user.username} (${user.id})`;
+  if (!user) {
+    return 'Unknown';
+  }
+
+
+  return `${
+    user.tag ||
+    user.username ||
+    'Unknown'
+  } (${user.id})`;
 }
 
+
+function channelText(
+  channel
+) {
+
+  if (!channel) {
+    return 'Unknown';
+  }
+
+
+  if (
+    channel.id &&
+    channel.name
+  ) {
+
+    return `<#${channel.id}> (${channel.name})`;
+  }
+
+
+  return channel.name ||
+    channel.id ||
+    'Unknown';
+}
+
+
+/* =========================================================
+   SEND LOG
+========================================================= */
 
 async function sendLog(
   client,
   type,
   embed
 ) {
+
   try {
+
+    if (
+      !client
+    ) {
+      return;
+    }
+
+
     const channel =
       await getLogChannel(
         client,
         type
       );
 
+
     if (
-      !channel ||
-      !channel.isTextBased()
+      !channel
     ) {
       return;
     }
 
-    await channel.send({
-      embeds: [embed],
-    });
-  }
 
-  catch (err) {
+    await channel.send({
+      embeds: [
+        embed,
+      ],
+    });
+
+  } catch (err) {
+
     console.error(
       `[LOGGER] Failed to send ${type} log:`,
       err
@@ -97,123 +228,116 @@ async function sendLog(
 
 
 /* =========================================================
-   MESSAGE LOGS
+   MESSAGE CREATED
 ========================================================= */
 
-async function logMessageEdit(
-  oldMessage,
-  newMessage
+async function logMessageCreate(
+  message
 ) {
-  if (!oldMessage?.guild) return;
 
   if (
-    oldMessage.author?.bot &&
-    newMessage.author?.bot
+    !message?.guild
   ) {
     return;
   }
 
-  const oldContent =
-    oldMessage.content || 'No content';
 
-  const newContent =
-    newMessage.content || 'No content';
-
-  if (oldContent === newContent) {
+  if (
+    message.author?.bot
+  ) {
     return;
   }
 
+
   const embed =
     new EmbedBuilder()
-      .setTitle('✏️ Message Edited')
-      .addFields(
-        {
-          name: 'User',
-          value: userText(
-            oldMessage.author
-          ),
-          inline: true,
-        },
-        {
-          name: 'Channel',
-          value:
-            `${oldMessage.channel}`,
-          inline: true,
-        },
-        {
-          name: 'Message ID',
-          value:
-            oldMessage.id,
-          inline: true,
-        },
-        {
-          name: 'Before',
-          value:
-            clip(oldContent),
-        },
-        {
-          name: 'After',
-          value:
-            clip(newContent),
-        }
+      .setTitle(
+        '💬 Message Sent'
       )
-      .setTimestamp();
-
-  if (newMessage.url) {
-    embed.setURL(
-      newMessage.url
-    );
-  }
-
-  await sendLog(
-    newMessage.client,
-    'message',
-    embed
-  );
-}
-
-
-async function logMessageDelete(
-  message
-) {
-  if (!message?.guild) return;
-
-  if (message.author?.bot) {
-    return;
-  }
-
-  const embed =
-    new EmbedBuilder()
-      .setTitle('🗑️ Message Deleted')
       .addFields(
         {
-          name: 'User',
+          name:
+            'User',
+
           value:
-            userText(message.author),
-          inline: true,
+            userText(
+              message.author
+            ),
+
+          inline:
+            true,
         },
+
         {
-          name: 'Channel',
+          name:
+            'Channel',
+
           value:
-            `${message.channel}`,
-          inline: true,
+            channelText(
+              message.channel
+            ),
+
+          inline:
+            true,
         },
+
         {
-          name: 'Message ID',
+          name:
+            'Message ID',
+
           value:
             message.id,
-          inline: true,
+
+          inline:
+            true,
         },
+
         {
-          name: 'Content',
+          name:
+            'Content',
+
           value:
             clip(
               message.content ||
-              'Content unavailable'
+              'No text content'
             ),
         }
       )
       .setTimestamp();
+
+
+  if (
+    message.attachments?.size
+  ) {
+
+    embed.addFields({
+      name:
+        'Attachments',
+
+      value:
+        message.attachments
+          .map(
+            (attachment) =>
+              attachment.url
+          )
+          .join('\n')
+          .slice(
+            0,
+            1024
+          ),
+    });
+  }
+
+
+  if (
+    message.url
+  ) {
+
+    embed.setURL(
+      message.url
+    );
+  }
+
 
   await sendLog(
     message.client,
@@ -224,40 +348,303 @@ async function logMessageDelete(
 
 
 /* =========================================================
-   MEMBER LOGS
+   MESSAGE EDITED
+========================================================= */
+
+async function logMessageEdit(
+  oldMessage,
+  newMessage
+) {
+
+  if (
+    !oldMessage?.guild
+  ) {
+    return;
+  }
+
+
+  if (
+    oldMessage.author?.bot
+  ) {
+    return;
+  }
+
+
+  const oldContent =
+    oldMessage.content ||
+    'No content';
+
+
+  const newContent =
+    newMessage.content ||
+    'No content';
+
+
+  if (
+    oldContent ===
+    newContent
+  ) {
+    return;
+  }
+
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        '✏️ Message Edited'
+      )
+      .addFields(
+        {
+          name:
+            'User',
+
+          value:
+            userText(
+              oldMessage.author
+            ),
+
+          inline:
+            true,
+        },
+
+        {
+          name:
+            'Channel',
+
+          value:
+            channelText(
+              oldMessage.channel
+            ),
+
+          inline:
+            true,
+        },
+
+        {
+          name:
+            'Message ID',
+
+          value:
+            oldMessage.id,
+
+          inline:
+            true,
+        },
+
+        {
+          name:
+            'Before',
+
+          value:
+            clip(
+              oldContent
+            ),
+        },
+
+        {
+          name:
+            'After',
+
+          value:
+            clip(
+              newContent
+            ),
+        }
+      )
+      .setTimestamp();
+
+
+  if (
+    newMessage.url
+  ) {
+
+    embed.setURL(
+      newMessage.url
+    );
+  }
+
+
+  await sendLog(
+    newMessage.client,
+    'message',
+    embed
+  );
+}
+
+
+/* =========================================================
+   MESSAGE DELETED
+========================================================= */
+
+async function logMessageDelete(
+  message
+) {
+
+  if (
+    !message?.guild
+  ) {
+    return;
+  }
+
+
+  if (
+    message.author?.bot
+  ) {
+    return;
+  }
+
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        '🗑️ Message Deleted'
+      )
+      .addFields(
+        {
+          name:
+            'User',
+
+          value:
+            userText(
+              message.author
+            ),
+
+          inline:
+            true,
+        },
+
+        {
+          name:
+            'Channel',
+
+          value:
+            channelText(
+              message.channel
+            ),
+
+          inline:
+            true,
+        },
+
+        {
+          name:
+            'Message ID',
+
+          value:
+            message.id,
+
+          inline:
+            true,
+        },
+
+        {
+          name:
+            'Content',
+
+          value:
+            clip(
+              message.content ||
+              'Content unavailable'
+            ),
+        }
+      )
+      .setTimestamp();
+
+
+  if (
+    message.attachments?.size
+  ) {
+
+    embed.addFields({
+      name:
+        'Attachments',
+
+      value:
+        message.attachments
+          .map(
+            (attachment) =>
+              attachment.url
+          )
+          .join('\n')
+          .slice(
+            0,
+            1024
+          ),
+    });
+  }
+
+
+  await sendLog(
+    message.client,
+    'message',
+    embed
+  );
+}
+
+
+/* =========================================================
+   MEMBER JOIN
 ========================================================= */
 
 async function logMemberJoin(
   member
 ) {
+
+  if (
+    !member?.guild
+  ) {
+    return;
+  }
+
+
   const embed =
     new EmbedBuilder()
-      .setTitle('📥 Member Joined')
+      .setTitle(
+        '📥 Member Joined'
+      )
       .addFields(
         {
-          name: 'User',
+          name:
+            'User',
+
           value:
-            userText(member.user),
-          inline: true,
+            userText(
+              member.user
+            ),
+
+          inline:
+            true,
         },
+
         {
-          name: 'Account Created',
+          name:
+            'Account Created',
+
           value:
             `<t:${Math.floor(
-              member.user.createdTimestamp / 1000
+              member.user.createdTimestamp /
+              1000
             )}:F>`,
-          inline: true,
+
+          inline:
+            true,
         },
+
         {
-          name: 'Member Count',
+          name:
+            'Member Count',
+
           value:
             String(
               member.guild.memberCount
             ),
-          inline: true,
+
+          inline:
+            true,
         }
       )
       .setTimestamp();
+
 
   await sendLog(
     member.client,
@@ -266,28 +653,132 @@ async function logMemberJoin(
   );
 }
 
+
+/* =========================================================
+   MEMBER LEAVE / KICK
+========================================================= */
 
 async function logMemberLeave(
   member
 ) {
+
+  if (
+    !member?.guild
+  ) {
+    return;
+  }
+
+
+  /*
+    Try to determine whether this was a kick.
+  */
+
+  let auditEntry =
+    null;
+
+
+  try {
+
+    const logs =
+      await member.guild
+        .fetchAuditLogs({
+          type:
+            AuditLogEvent.MemberKick,
+
+          limit:
+            5,
+        });
+
+
+    auditEntry =
+      logs.entries.find(
+        (entry) =>
+          entry.target?.id ===
+            member.id &&
+          Date.now() -
+            entry.createdTimestamp <
+            10000
+      );
+
+  } catch {
+    auditEntry = null;
+  }
+
+
+  const wasKick =
+    Boolean(
+      auditEntry
+    );
+
+
   const embed =
     new EmbedBuilder()
-      .setTitle('📤 Member Left')
+      .setTitle(
+        wasKick
+          ? '👢 Member Kicked'
+          : '📤 Member Left'
+      )
       .addFields(
         {
-          name: 'User',
+          name:
+            'User',
+
           value:
-            userText(member.user),
-          inline: true,
+            userText(
+              member.user
+            ),
+
+          inline:
+            true,
         },
+
         {
-          name: 'Member ID',
+          name:
+            'Member ID',
+
           value:
             member.id,
-          inline: true,
+
+          inline:
+            true,
         }
       )
       .setTimestamp();
+
+
+  if (
+    wasKick
+  ) {
+
+    embed.addFields(
+      {
+        name:
+          'Moderator',
+
+        value:
+          auditEntry.executor
+            ? userText(
+                auditEntry.executor
+              )
+            : 'Unknown',
+
+        inline:
+          true,
+      },
+
+      {
+        name:
+          'Reason',
+
+        value:
+          clip(
+            auditEntry.reason ||
+            'No reason provided'
+          ),
+      }
+    );
+  }
+
 
   await sendLog(
     member.client,
@@ -296,11 +787,16 @@ async function logMemberLeave(
   );
 }
 
+
+/* =========================================================
+   NICKNAME CHANGE
+========================================================= */
 
 async function logNicknameChange(
   oldMember,
   newMember
 ) {
+
   if (
     oldMember.nickname ===
     newMember.nickname
@@ -308,32 +804,56 @@ async function logNicknameChange(
     return;
   }
 
+
   const embed =
     new EmbedBuilder()
-      .setTitle('✏️ Nickname Changed')
+      .setTitle(
+        '✏️ Nickname Changed'
+      )
       .addFields(
         {
-          name: 'User',
+          name:
+            'User',
+
           value:
-            userText(newMember.user),
-          inline: true,
+            userText(
+              newMember.user
+            ),
+
+          inline:
+            true,
         },
+
         {
-          name: 'Before',
+          name:
+            'Before',
+
           value:
-            oldMember.nickname ||
-            oldMember.user.username,
-          inline: true,
+            clip(
+              oldMember.nickname ||
+              oldMember.user.username
+            ),
+
+          inline:
+            true,
         },
+
         {
-          name: 'After',
+          name:
+            'After',
+
           value:
-            newMember.nickname ||
-            newMember.user.username,
-          inline: true,
+            clip(
+              newMember.nickname ||
+              newMember.user.username
+            ),
+
+          inline:
+            true,
         }
       )
       .setTimestamp();
+
 
   await sendLog(
     newMember.client,
@@ -344,18 +864,151 @@ async function logNicknameChange(
 
 
 /* =========================================================
-   MODERATION LOGS
+   MEMBER ROLE CHANGES
+========================================================= */
+
+async function logMemberRolesUpdate(
+  oldMember,
+  newMember
+) {
+
+  const oldRoles =
+    new Set(
+      oldMember.roles.cache
+        .map(
+          (role) =>
+            role.id
+        )
+    );
+
+
+  const newRoles =
+    new Set(
+      newMember.roles.cache
+        .map(
+          (role) =>
+            role.id
+        )
+    );
+
+
+  const added =
+    newMember.roles.cache
+      .filter(
+        (role) =>
+          !oldRoles.has(
+            role.id
+          )
+      );
+
+
+  const removed =
+    oldMember.roles.cache
+      .filter(
+        (role) =>
+          !newRoles.has(
+            role.id
+          )
+      );
+
+
+  if (
+    !added.size &&
+    !removed.size
+  ) {
+    return;
+  }
+
+
+  const changes = [];
+
+
+  if (
+    added.size
+  ) {
+
+    changes.push(
+      `**Added:** ${added
+        .map(
+          (role) =>
+            `${role}`
+        )
+        .join(', ')}`
+    );
+  }
+
+
+  if (
+    removed.size
+  ) {
+
+    changes.push(
+      `**Removed:** ${removed
+        .map(
+          (role) =>
+            `${role.name}`
+        )
+        .join(', ')}`
+    );
+  }
+
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        '🎭 Member Roles Changed'
+      )
+      .addFields(
+        {
+          name:
+            'User',
+
+          value:
+            userText(
+              newMember.user
+            ),
+
+          inline:
+            true,
+        },
+
+        {
+          name:
+            'Changes',
+
+          value:
+            clip(
+              changes.join('\n')
+            ),
+        }
+      )
+      .setTimestamp();
+
+
+  await sendLog(
+    newMember.client,
+    'member',
+    embed
+  );
+}
+
+
+/* =========================================================
+   TIMEOUT
 ========================================================= */
 
 async function logTimeout(
   oldMember,
   newMember
 ) {
+
   const oldTimeout =
     oldMember.communicationDisabledUntilTimestamp;
 
+
   const newTimeout =
     newMember.communicationDisabledUntilTimestamp;
+
 
   if (
     oldTimeout ===
@@ -364,8 +1017,44 @@ async function logTimeout(
     return;
   }
 
+
   const isTimedOut =
-    Boolean(newTimeout);
+    Boolean(
+      newTimeout
+    );
+
+
+  let auditEntry =
+    null;
+
+
+  try {
+
+    const logs =
+      await newMember.guild
+        .fetchAuditLogs({
+          type:
+            AuditLogEvent.MemberUpdate,
+
+          limit:
+            10,
+        });
+
+
+    auditEntry =
+      logs.entries.find(
+        (entry) =>
+          entry.target?.id ===
+            newMember.id &&
+          Date.now() -
+            entry.createdTimestamp <
+            10000
+      );
+
+  } catch {
+    auditEntry = null;
+  }
+
 
   const embed =
     new EmbedBuilder()
@@ -376,23 +1065,71 @@ async function logTimeout(
       )
       .addFields(
         {
-          name: 'User',
+          name:
+            'User',
+
           value:
-            userText(newMember.user),
-          inline: true,
+            userText(
+              newMember.user
+            ),
+
+          inline:
+            true,
         },
+
         {
-          name: 'Until',
+          name:
+            'Until',
+
           value:
             newTimeout
               ? `<t:${Math.floor(
-                  newTimeout / 1000
+                  newTimeout /
+                  1000
                 )}:F>`
               : 'Timeout removed',
-          inline: true,
+
+          inline:
+            true,
         }
       )
       .setTimestamp();
+
+
+  if (
+    auditEntry?.executor
+  ) {
+
+    embed.addFields({
+      name:
+        'Moderator',
+
+      value:
+        userText(
+          auditEntry.executor
+        ),
+
+      inline:
+        true,
+    });
+  }
+
+
+  if (
+    auditEntry?.reason
+  ) {
+
+    embed.addFields({
+      name:
+        'Reason',
+
+      value:
+        clip(
+          auditEntry.reason
+        ),
+    });
+  }
+
 
   await sendLog(
     newMember.client,
@@ -402,39 +1139,58 @@ async function logTimeout(
 }
 
 
+/* =========================================================
+   AUDIT LOG HELPER
+========================================================= */
+
 async function getAuditExecutor(
   guild,
   type,
   targetId
 ) {
+
   try {
+
     const logs =
-      await guild.fetchAuditLogs({
-        type,
-        limit: 5,
-      });
+      await guild
+        .fetchAuditLogs({
+          type,
+          limit:
+            10,
+        });
+
 
     const entry =
       logs.entries.find(
         (entry) =>
-          entry.target?.id === targetId &&
+          entry.target?.id ===
+            targetId &&
           Date.now() -
             entry.createdTimestamp <
             10000
       );
 
-    return entry || null;
-  }
 
-  catch {
+    return (
+      entry ||
+      null
+    );
+
+  } catch {
+
     return null;
   }
 }
 
 
+/* =========================================================
+   BAN
+========================================================= */
+
 async function logBan(
   ban
 ) {
+
   const entry =
     await getAuditExecutor(
       ban.guild,
@@ -442,26 +1198,45 @@ async function logBan(
       ban.user.id
     );
 
+
   const embed =
     new EmbedBuilder()
-      .setTitle('🔨 Member Banned')
+      .setTitle(
+        '🔨 Member Banned'
+      )
       .addFields(
         {
-          name: 'User',
+          name:
+            'User',
+
           value:
-            userText(ban.user),
-          inline: true,
+            userText(
+              ban.user
+            ),
+
+          inline:
+            true,
         },
+
         {
-          name: 'Moderator',
+          name:
+            'Moderator',
+
           value:
             entry?.executor
-              ? userText(entry.executor)
+              ? userText(
+                  entry.executor
+                )
               : 'Unknown',
-          inline: true,
+
+          inline:
+            true,
         },
+
         {
-          name: 'Reason',
+          name:
+            'Reason',
+
           value:
             clip(
               ban.reason ||
@@ -472,44 +1247,6 @@ async function logBan(
       )
       .setTimestamp();
 
-  await sendLog(
-    ban.client,
-    'moderation',
-    embed
-  );
-}
-
-
-async function logUnban(
-  ban
-) {
-  const entry =
-    await getAuditExecutor(
-      ban.guild,
-      AuditLogEvent.MemberBanRemove,
-      ban.user.id
-    );
-
-  const embed =
-    new EmbedBuilder()
-      .setTitle('🔓 Member Unbanned')
-      .addFields(
-        {
-          name: 'User',
-          value:
-            userText(ban.user),
-          inline: true,
-        },
-        {
-          name: 'Moderator',
-          value:
-            entry?.executor
-              ? userText(entry.executor)
-              : 'Unknown',
-          inline: true,
-        }
-      )
-      .setTimestamp();
 
   await sendLog(
     ban.client,
@@ -520,30 +1257,111 @@ async function logUnban(
 
 
 /* =========================================================
-   ROLE LOGS
+   UNBAN
+========================================================= */
+
+async function logUnban(
+  ban
+) {
+
+  const entry =
+    await getAuditExecutor(
+      ban.guild,
+      AuditLogEvent.MemberBanRemove,
+      ban.user.id
+    );
+
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        '🔓 Member Unbanned'
+      )
+      .addFields(
+        {
+          name:
+            'User',
+
+          value:
+            userText(
+              ban.user
+            ),
+
+          inline:
+            true,
+        },
+
+        {
+          name:
+            'Moderator',
+
+          value:
+            entry?.executor
+              ? userText(
+                  entry.executor
+                )
+              : 'Unknown',
+
+          inline:
+            true,
+        }
+      )
+      .setTimestamp();
+
+
+  await sendLog(
+    ban.client,
+    'moderation',
+    embed
+  );
+}
+
+
+/* =========================================================
+   ROLE CREATED
 ========================================================= */
 
 async function logRoleCreate(
   role
 ) {
+
+  if (
+    !role.guild
+  ) {
+    return;
+  }
+
+
   const embed =
     new EmbedBuilder()
-      .setTitle('🟢 Role Created')
+      .setTitle(
+        '🟢 Role Created'
+      )
       .addFields(
         {
-          name: 'Role',
+          name:
+            'Role',
+
           value:
             `${role.name} (${role.id})`,
-          inline: true,
+
+          inline:
+            true,
         },
+
         {
-          name: 'Color',
+          name:
+            'Color',
+
           value:
             role.hexColor,
-          inline: true,
+
+          inline:
+            true,
         }
       )
       .setTimestamp();
+
 
   await sendLog(
     role.client,
@@ -552,21 +1370,36 @@ async function logRoleCreate(
   );
 }
 
+
+/* =========================================================
+   ROLE DELETED
+========================================================= */
 
 async function logRoleDelete(
   role
 ) {
+
+  if (
+    !role.guild
+  ) {
+    return;
+  }
+
+
   const embed =
     new EmbedBuilder()
-      .setTitle('🔴 Role Deleted')
-      .addFields(
-        {
-          name: 'Role',
-          value:
-            `${role.name} (${role.id})`,
-        }
+      .setTitle(
+        '🔴 Role Deleted'
       )
+      .addFields({
+        name:
+          'Role',
+
+        value:
+          `${role.name} (${role.id})`,
+      })
       .setTimestamp();
+
 
   await sendLog(
     role.client,
@@ -575,55 +1408,117 @@ async function logRoleDelete(
   );
 }
 
+
+/* =========================================================
+   ROLE UPDATED
+========================================================= */
 
 async function logRoleUpdate(
   oldRole,
   newRole
 ) {
+
+  if (
+    !newRole.guild
+  ) {
+    return;
+  }
+
+
   const changes = [];
+
 
   if (
     oldRole.name !==
     newRole.name
   ) {
+
     changes.push(
       `**Name:** ${oldRole.name} → ${newRole.name}`
     );
   }
 
+
   if (
     oldRole.hexColor !==
     newRole.hexColor
   ) {
+
     changes.push(
       `**Color:** ${oldRole.hexColor} → ${newRole.hexColor}`
     );
   }
 
+
   if (
     oldRole.position !==
     newRole.position
   ) {
+
     changes.push(
       `**Position:** ${oldRole.position} → ${newRole.position}`
     );
   }
 
-  if (!changes.length) {
+
+  if (
+    oldRole.permissions.bitfield !==
+    newRole.permissions.bitfield
+  ) {
+
+    changes.push(
+      '**Permissions changed**'
+    );
+  }
+
+
+  if (
+    oldRole.mentionable !==
+    newRole.mentionable
+  ) {
+
+    changes.push(
+      `**Mentionable:** ${oldRole.mentionable} → ${newRole.mentionable}`
+    );
+  }
+
+
+  if (
+    oldRole.hoist !==
+    newRole.hoist
+  ) {
+
+    changes.push(
+      `**Displayed separately:** ${oldRole.hoist} → ${newRole.hoist}`
+    );
+  }
+
+
+  if (
+    !changes.length
+  ) {
     return;
   }
 
+
   const embed =
     new EmbedBuilder()
-      .setTitle('✏️ Role Updated')
+      .setTitle(
+        '✏️ Role Updated'
+      )
       .addFields(
         {
-          name: 'Role',
+          name:
+            'Role',
+
           value:
             `${newRole.name} (${newRole.id})`,
         },
+
         {
-          name: 'Changes',
+          name:
+            'Changes',
+
           value:
             clip(
               changes.join('\n')
@@ -631,6 +1526,7 @@ async function logRoleUpdate(
         }
       )
       .setTimestamp();
+
 
   await sendLog(
     newRole.client,
@@ -641,30 +1537,56 @@ async function logRoleUpdate(
 
 
 /* =========================================================
-   CHANNEL LOGS
+   CHANNEL CREATED
 ========================================================= */
 
 async function logChannelCreate(
   channel
 ) {
-  if (!channel.guild) return;
+
+  if (
+    !channel.guild
+  ) {
+    return;
+  }
+
 
   const embed =
     new EmbedBuilder()
-      .setTitle('🟢 Channel Created')
+      .setTitle(
+        '🟢 Channel Created'
+      )
       .addFields(
         {
-          name: 'Channel',
+          name:
+            'Channel',
+
           value:
             `${channel.name} (${channel.id})`,
         },
+
         {
-          name: 'Type',
+          name:
+            'Type',
+
           value:
-            String(channel.type),
+            String(
+              channel.type
+            ),
+        },
+
+        {
+          name:
+            'Category',
+
+          value:
+            channel.parent
+              ? `${channel.parent.name} (${channel.parent.id})`
+              : 'None',
         }
       )
       .setTimestamp();
+
 
   await sendLog(
     channel.client,
@@ -673,23 +1595,36 @@ async function logChannelCreate(
   );
 }
 
+
+/* =========================================================
+   CHANNEL DELETED
+========================================================= */
 
 async function logChannelDelete(
   channel
 ) {
-  if (!channel.guild) return;
+
+  if (
+    !channel.guild
+  ) {
+    return;
+  }
+
 
   const embed =
     new EmbedBuilder()
-      .setTitle('🔴 Channel Deleted')
-      .addFields(
-        {
-          name: 'Channel',
-          value:
-            `${channel.name} (${channel.id})`,
-        }
+      .setTitle(
+        '🔴 Channel Deleted'
       )
+      .addFields({
+        name:
+          'Channel',
+
+        value:
+          `${channel.name} (${channel.id})`,
+      })
       .setTimestamp();
+
 
   await sendLog(
     channel.client,
@@ -698,57 +1633,106 @@ async function logChannelDelete(
   );
 }
 
+
+/* =========================================================
+   CHANNEL UPDATED
+========================================================= */
 
 async function logChannelUpdate(
   oldChannel,
   newChannel
 ) {
-  if (!newChannel.guild) return;
+
+  if (
+    !newChannel.guild
+  ) {
+    return;
+  }
+
 
   const changes = [];
+
 
   if (
     oldChannel.name !==
     newChannel.name
   ) {
+
     changes.push(
       `**Name:** ${oldChannel.name} → ${newChannel.name}`
     );
   }
 
+
   if (
     oldChannel.topic !==
     newChannel.topic
   ) {
+
     changes.push(
-      `**Topic changed**`
+      '**Topic changed**'
     );
   }
+
 
   if (
     oldChannel.parentId !==
     newChannel.parentId
   ) {
+
     changes.push(
-      `**Category changed**`
+      '**Category changed**'
     );
   }
 
-  if (!changes.length) {
+
+  if (
+    oldChannel.nsfw !==
+    newChannel.nsfw
+  ) {
+
+    changes.push(
+      `**NSFW:** ${oldChannel.nsfw} → ${newChannel.nsfw}`
+    );
+  }
+
+
+  if (
+    oldChannel.rateLimitPerUser !==
+    newChannel.rateLimitPerUser
+  ) {
+
+    changes.push(
+      `**Slowmode:** ${oldChannel.rateLimitPerUser}s → ${newChannel.rateLimitPerUser}s`
+    );
+  }
+
+
+  if (
+    !changes.length
+  ) {
     return;
   }
 
+
   const embed =
     new EmbedBuilder()
-      .setTitle('✏️ Channel Updated')
+      .setTitle(
+        '✏️ Channel Updated'
+      )
       .addFields(
         {
-          name: 'Channel',
+          name:
+            'Channel',
+
           value:
             `${newChannel.name} (${newChannel.id})`,
         },
+
         {
-          name: 'Changes',
+          name:
+            'Changes',
+
           value:
             clip(
               changes.join('\n')
@@ -756,6 +1740,7 @@ async function logChannelUpdate(
         }
       )
       .setTimestamp();
+
 
   await sendLog(
     newChannel.client,
@@ -766,59 +1751,177 @@ async function logChannelUpdate(
 
 
 /* =========================================================
-   TICKET LOG
+   SERVER UPDATED
+========================================================= */
+
+async function logGuildUpdate(
+  oldGuild,
+  newGuild
+) {
+
+  const changes = [];
+
+
+  if (
+    oldGuild.name !==
+    newGuild.name
+  ) {
+
+    changes.push(
+      `**Name:** ${oldGuild.name} → ${newGuild.name}`
+    );
+  }
+
+
+  if (
+    oldGuild.icon !==
+    newGuild.icon
+  ) {
+
+    changes.push(
+      '**Server icon changed**'
+    );
+  }
+
+
+  if (
+    oldGuild.banner !==
+    newGuild.banner
+  ) {
+
+    changes.push(
+      '**Server banner changed**'
+    );
+  }
+
+
+  if (
+    !changes.length
+  ) {
+    return;
+  }
+
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        '🏠 Server Updated'
+      )
+      .addFields({
+        name:
+          'Changes',
+
+        value:
+          clip(
+            changes.join('\n')
+          ),
+      })
+      .setTimestamp();
+
+
+  await sendLog(
+    newGuild.client,
+    'server',
+    embed
+  );
+}
+
+
+/* =========================================================
+   TICKET CLOSED
 ========================================================= */
 
 async function logTicketClose(
   client,
   data
 ) {
+
   const embed =
     new EmbedBuilder()
-      .setTitle('🔒 Ticket Closed')
+      .setTitle(
+        '🔒 Ticket Closed'
+      )
       .addFields(
         {
-          name: 'Ticket',
+          name:
+            'Ticket',
+
           value:
-            data.channelName || 'Unknown',
-          inline: true,
+            data.channelName ||
+            'Unknown',
+
+          inline:
+            true,
         },
+
         {
-          name: 'Opened By',
+          name:
+            'Opened By',
+
           value:
-            `<@${data.ownerId}>`,
-          inline: true,
+            data.ownerId
+              ? `<@${data.ownerId}>`
+              : 'Unknown',
+
+          inline:
+            true,
         },
+
         {
-          name: 'Closed By',
+          name:
+            'Closed By',
+
           value:
-            `<@${data.closerId}>`,
-          inline: true,
+            data.closerId
+              ? `<@${data.closerId}>`
+              : 'Unknown',
+
+          inline:
+            true,
         },
+
         {
-          name: 'Confirmed By',
+          name:
+            'Confirmed By',
+
           value:
             data.confirmedBy
               ? `<@${data.confirmedBy}>`
               : 'N/A',
-          inline: true,
+
+          inline:
+            true,
         },
+
         {
-          name: 'Method',
+          name:
+            'Method',
+
           value:
             data.forced
               ? '⚡ Admin Force Close'
               : 'Normal Confirmation',
-          inline: true,
+
+          inline:
+            true,
         },
+
         {
-          name: 'Category',
+          name:
+            'Category',
+
           value:
-            data.categoryId || 'Unknown',
-          inline: true,
+            data.categoryId ||
+            'Unknown',
+
+          inline:
+            true,
         },
+
         {
-          name: 'Reason',
+          name:
+            'Reason',
+
           value:
             clip(
               data.reason ||
@@ -827,6 +1930,7 @@ async function logTicketClose(
         }
       )
       .setTimestamp();
+
 
   await sendLog(
     client,
@@ -841,15 +1945,17 @@ async function logTicketClose(
 ========================================================= */
 
 module.exports = {
+
   sendLog,
 
+  logMessageCreate,
   logMessageEdit,
   logMessageDelete,
 
   logMemberJoin,
   logMemberLeave,
   logNicknameChange,
-
+  logMemberRolesUpdate,
   logTimeout,
 
   logBan,
@@ -862,6 +1968,8 @@ module.exports = {
   logChannelCreate,
   logChannelDelete,
   logChannelUpdate,
+
+  logGuildUpdate,
 
   logTicketClose,
 };
