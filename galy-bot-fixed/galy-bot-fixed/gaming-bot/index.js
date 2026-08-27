@@ -40,58 +40,56 @@ const client = new Client({
 
 client.commands = new Collection();
 
-const commandsPath =
-  path.join(
-    __dirname,
-    'commands'
-  );
+const commandsPath = path.join(
+  __dirname,
+  'commands'
+);
 
-for (
-  const file of fs
-    .readdirSync(commandsPath)
-    .filter(
-      (f) =>
-        f.endsWith('.js')
-    )
-) {
+if (fs.existsSync(commandsPath)) {
 
-  try {
+  for (
+    const file of fs
+      .readdirSync(commandsPath)
+      .filter((f) => f.endsWith('.js'))
+  ) {
 
-    const command =
-      require(
+    try {
+
+      const command = require(
         path.join(
           commandsPath,
           file
         )
       );
 
-    if (
-      command?.data?.name &&
-      typeof command.execute === 'function'
-    ) {
+      if (
+        command?.data?.name &&
+        typeof command.execute === 'function'
+      ) {
 
-      client.commands.set(
-        command.data.name,
-        command
-      );
+        client.commands.set(
+          command.data.name,
+          command
+        );
 
-      console.log(
-        `[COMMAND] Loaded /${command.data.name}`
-      );
+        console.log(
+          `[COMMAND] Loaded /${command.data.name}`
+        );
 
-    } else {
+      } else {
 
-      console.warn(
-        `[COMMAND] Skipping invalid command file: ${file}`
+        console.warn(
+          `[COMMAND] Skipping invalid command file: ${file}`
+        );
+      }
+
+    } catch (err) {
+
+      console.error(
+        `[COMMAND] Failed to load ${file}:`,
+        err
       );
     }
-
-  } catch (err) {
-
-    console.error(
-      `[COMMAND] Failed to load ${file}:`,
-      err
-    );
   }
 }
 
@@ -100,25 +98,22 @@ for (
    EVENTS
 ========================================================= */
 
-const eventsPath =
-  path.join(
-    __dirname,
-    'events'
-  );
+const eventsPath = path.join(
+  __dirname,
+  'events'
+);
 
-for (
-  const file of fs
-    .readdirSync(eventsPath)
-    .filter(
-      (f) =>
-        f.endsWith('.js')
-    )
-) {
+if (fs.existsSync(eventsPath)) {
 
-  try {
+  for (
+    const file of fs
+      .readdirSync(eventsPath)
+      .filter((f) => f.endsWith('.js'))
+  ) {
 
-    const event =
-      require(
+    try {
+
+      const event = require(
         path.join(
           eventsPath,
           file
@@ -126,82 +121,90 @@ for (
       );
 
 
-    /*
-      Normal Discord events.
+      /* =====================================================
+         CUSTOM MODULE
+         
+         Modules with register(client) are NOT normal
+         Discord events.
+         
+         This prevents the cross-server logger from being
+         accidentally registered as a Discord event too.
+      ===================================================== */
 
-      Example:
+      if (
+        typeof event.register === 'function'
+      ) {
 
-      {
-        name: 'messageCreate',
-        execute(message) {}
+        event.register(client);
+
+        console.log(
+          `[EVENT] Registered custom module: ${file}`
+        );
+
+        continue;
       }
-    */
 
-    if (
-      event.once
-    ) {
 
-      client.once(
-        event.name,
-        (...args) =>
-          event.execute(
-            ...args,
-            client
-          )
+      /* =====================================================
+         NORMAL DISCORD EVENT
+      ===================================================== */
+
+      if (
+        event.once &&
+        event.name &&
+        typeof event.execute === 'function'
+      ) {
+
+        client.once(
+          event.name,
+          (...args) =>
+            event.execute(
+              ...args,
+              client
+            )
+        );
+
+        console.log(
+          `[EVENT] Loaded once event ${event.name} (${file})`
+        );
+
+        continue;
+      }
+
+
+      if (
+        event.name &&
+        typeof event.execute === 'function'
+      ) {
+
+        client.on(
+          event.name,
+          (...args) =>
+            event.execute(
+              ...args,
+              client
+            )
+        );
+
+        console.log(
+          `[EVENT] Loaded ${event.name} (${file})`
+        );
+
+        continue;
+      }
+
+
+      console.warn(
+        `[EVENT] Skipping invalid event file: ${file}`
       );
 
-    } else if (
-      typeof event.execute === 'function'
-    ) {
+    } catch (err) {
 
-      client.on(
-        event.name,
-        (...args) =>
-          event.execute(
-            ...args,
-            client
-          )
+      console.error(
+        `[EVENT] Failed to load ${file}:`,
+        err
       );
     }
-
-
-    /*
-      Special event modules can expose:
-
-      register(client)
-
-      This is used by the cross-server logger.
-    */
-
-    if (
-      typeof event.register === 'function'
-    ) {
-
-      event.register(
-        client
-      );
-
-      console.log(
-        `[EVENT] Registered custom listeners from ${file}`
-      );
-    }
-
-
-    if (
-      event.name
-    ) {
-
-      console.log(
-        `[EVENT] Loaded ${event.name} (${file})`
-      );
-    }
-
-  } catch (err) {
-
-    console.error(
-      `[EVENT] Failed to load ${file}:`,
-      err
-    );
   }
 }
 
