@@ -137,9 +137,9 @@ module.exports = {
     /*
       Cross-server message log.
 
-      This records normal user messages in the configured
-      logging server, before ping protection or sticky
-      processing changes anything.
+      IMPORTANT:
+      This is the ONLY place where messageCreate
+      calls logMessageCreate().
     */
 
     try {
