@@ -274,5 +274,19 @@
       "Don't watch the clock; do what it does. Keep going.",
       "The future belongs to those who believe in the beauty of their dreams."
     ]
+  },
+
+  "logging": {
+    "enabled": true,
+
+    "logGuildId": "PUT_LOG_SERVER_ID_HERE",
+
+    "channels": {
+      "message": "PUT_LOG_MESSAGE_CHANNEL_ID_HERE",
+      "member": "PUT_LOG_MEMBER_CHANNEL_ID_HERE",
+      "moderation": "PUT_LOG_MODERATION_CHANNEL_ID_HERE",
+      "server": "PUT_LOG_SERVER_CHANNEL_ID_HERE",
+      "ticket": "PUT_LOG_TICKET_CHANNEL_ID_HERE"
+    }
   }
 }
