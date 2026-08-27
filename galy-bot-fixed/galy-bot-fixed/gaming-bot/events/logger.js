@@ -1,5 +1,4 @@
 const {
-  logMessageCreate,
   logMessageEdit,
   logMessageDelete,
 
@@ -31,8 +30,13 @@ const {
 module.exports = {
 
   /*
-    This name is only informational because this file uses
-    register() to attach multiple Discord event listeners.
+    messageCreate is intentionally NOT registered here.
+
+    events/messageCreate.js already handles messageCreate
+    and calls logMessageCreate().
+
+    Having it here as well would cause every message to
+    be logged multiple times.
   */
 
   name: 'logger',
@@ -42,31 +46,6 @@ module.exports = {
 
     console.log(
       '[LOGGER] Registering cross-server logging listeners...'
-    );
-
-
-    /* =====================================================
-       MESSAGE CREATED
-    ===================================================== */
-
-    client.on(
-      'messageCreate',
-      async (message) => {
-
-        try {
-
-          await logMessageCreate(
-            message
-          );
-
-        } catch (err) {
-
-          console.error(
-            '[LOGGER] messageCreate failed:',
-            err
-          );
-        }
-      }
     );
 
 
