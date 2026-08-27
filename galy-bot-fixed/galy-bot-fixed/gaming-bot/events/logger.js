@@ -24,6 +24,23 @@ const {
 
 
 /* =========================================================
+   LOGGER SERVER
+========================================================= */
+
+const LOGGER_GUILD_ID =
+  '1542361762186268765';
+
+
+/* =========================================================
+   CHECK IF EVENT IS FROM LOGGER SERVER
+========================================================= */
+
+function isLoggerServer(guild) {
+  return guild?.id === LOGGER_GUILD_ID;
+}
+
+
+/* =========================================================
    CROSS-SERVER LOGGER
 ========================================================= */
 
@@ -51,6 +68,14 @@ module.exports = {
 
         try {
 
+          if (
+            isLoggerServer(
+              newMessage.guild
+            )
+          ) {
+            return;
+          }
+
           await logMessageEdit(
             oldMessage,
             newMessage
@@ -77,6 +102,14 @@ module.exports = {
 
         try {
 
+          if (
+            isLoggerServer(
+              message.guild
+            )
+          ) {
+            return;
+          }
+
           await logMessageDelete(
             message
           );
@@ -102,6 +135,14 @@ module.exports = {
 
         try {
 
+          if (
+            isLoggerServer(
+              member.guild
+            )
+          ) {
+            return;
+          }
+
           await logMemberJoin(
             member
           );
@@ -126,6 +167,14 @@ module.exports = {
       async (member) => {
 
         try {
+
+          if (
+            isLoggerServer(
+              member.guild
+            )
+          ) {
+            return;
+          }
 
           await logMemberLeave(
             member
@@ -155,6 +204,14 @@ module.exports = {
 
         try {
 
+          if (
+            isLoggerServer(
+              newMember.guild
+            )
+          ) {
+            return;
+          }
+
           await logNicknameChange(
             oldMember,
             newMember
@@ -171,6 +228,14 @@ module.exports = {
 
         try {
 
+          if (
+            isLoggerServer(
+              newMember.guild
+            )
+          ) {
+            return;
+          }
+
           await logMemberRolesUpdate(
             oldMember,
             newMember
@@ -186,6 +251,14 @@ module.exports = {
 
 
         try {
+
+          if (
+            isLoggerServer(
+              newMember.guild
+            )
+          ) {
+            return;
+          }
 
           await logTimeout(
             oldMember,
@@ -213,6 +286,14 @@ module.exports = {
 
         try {
 
+          if (
+            isLoggerServer(
+              ban.guild
+            )
+          ) {
+            return;
+          }
+
           await logBan(
             ban
           );
@@ -237,6 +318,14 @@ module.exports = {
       async (ban) => {
 
         try {
+
+          if (
+            isLoggerServer(
+              ban.guild
+            )
+          ) {
+            return;
+          }
 
           await logUnban(
             ban
@@ -263,6 +352,14 @@ module.exports = {
 
         try {
 
+          if (
+            isLoggerServer(
+              role.guild
+            )
+          ) {
+            return;
+          }
+
           await logRoleCreate(
             role
           );
@@ -287,6 +384,14 @@ module.exports = {
       async (role) => {
 
         try {
+
+          if (
+            isLoggerServer(
+              role.guild
+            )
+          ) {
+            return;
+          }
 
           await logRoleDelete(
             role
@@ -316,6 +421,14 @@ module.exports = {
 
         try {
 
+          if (
+            isLoggerServer(
+              newRole.guild
+            )
+          ) {
+            return;
+          }
+
           await logRoleUpdate(
             oldRole,
             newRole
@@ -342,6 +455,14 @@ module.exports = {
 
         try {
 
+          if (
+            isLoggerServer(
+              channel.guild
+            )
+          ) {
+            return;
+          }
+
           await logChannelCreate(
             channel
           );
@@ -366,6 +487,14 @@ module.exports = {
       async (channel) => {
 
         try {
+
+          if (
+            isLoggerServer(
+              channel.guild
+            )
+          ) {
+            return;
+          }
 
           await logChannelDelete(
             channel
@@ -394,6 +523,14 @@ module.exports = {
       ) => {
 
         try {
+
+          if (
+            isLoggerServer(
+              newChannel.guild
+            )
+          ) {
+            return;
+          }
 
           await logChannelUpdate(
             oldChannel,
@@ -424,6 +561,13 @@ module.exports = {
 
         try {
 
+          if (
+            newGuild.id ===
+            LOGGER_GUILD_ID
+          ) {
+            return;
+          }
+
           await logGuildUpdate(
             oldGuild,
             newGuild
@@ -442,6 +586,10 @@ module.exports = {
 
     console.log(
       '[LOGGER] Cross-server logger is active.'
+    );
+
+    console.log(
+      `[LOGGER] Ignoring logger server: ${LOGGER_GUILD_ID}`
     );
   },
 };
