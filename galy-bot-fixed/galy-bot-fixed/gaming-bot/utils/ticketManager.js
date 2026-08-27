@@ -516,9 +516,7 @@ async function createTicket(
         )
         .setDescription(
           `Hi ${user}, thanks for reaching out!\n\n` +
-
           `**Category:** ${category.label}\n\n` +
-
           'Please provide as much detail as possible. ' +
           'A member of our team will be with you shortly.'
         )
@@ -1088,18 +1086,27 @@ async function claimTicket(
     );
 
 
-  incrementStat(
-    interaction.guild,
-    interaction.user.id,
-    'ticketsHandled'
-  ).catch(
-    (err) => {
-      console.error(
-        'Failed to update staff tracker for ticket claim:',
-        err
-      );
-    }
-  );
+  /*
+    FIX:
+    Keep staff tracker errors completely isolated from
+    the interaction itself.
+  */
+
+  try {
+
+    await incrementStat(
+      interaction.guild,
+      interaction.user.id,
+      'ticketsHandled'
+    );
+
+  } catch (err) {
+
+    console.error(
+      'Failed to update staff tracker for ticket claim:',
+      err
+    );
+  }
 }
 
 
@@ -1479,117 +1486,188 @@ async function performTicketClose(
   }
 
 
-  if (
-    interaction.replied ||
-    interaction.deferred
-  ) {
+  /*
+    =========================================================
+    SEND CLOSE EMBED FIRST
+    =========================================================
 
-    await interaction.editReply({
-      embeds: [
-        closeEmbed,
-      ],
-      components: [],
-    }).catch(
-      () => {}
+    Once this succeeds, everything afterwards is isolated
+    so a failure in stats/logging/transcripts cannot cause
+    the global interaction error message to appear.
+  */
+
+  try {
+
+    if (
+      interaction.replied ||
+      interaction.deferred
+    ) {
+
+      await interaction.editReply({
+        embeds: [
+          closeEmbed,
+        ],
+        components: [],
+      });
+
+    } else {
+
+      await interaction.reply({
+        embeds: [
+          closeEmbed,
+        ],
+        components: [],
+      });
+
+    }
+
+  } catch (err) {
+
+    console.error(
+      'Failed to send ticket close embed:',
+      err
     );
 
-  } else {
+    /*
+      If the interaction has already been acknowledged,
+      do not attempt another reply here.
+    */
 
-    await interaction.reply({
-      embeds: [
-        closeEmbed,
-      ],
-      components: [],
-    });
+    if (
+      !interaction.replied &&
+      !interaction.deferred
+    ) {
+
+      try {
+
+        await interaction.reply({
+          content:
+            '❌ Failed to close this ticket.',
+          ephemeral: true,
+        });
+
+      } catch (_) {}
+
+    }
+
+    return;
   }
 
 
   /*
-    IMPORTANT STAFF TRACKER FIX
+    =========================================================
+    STAFF TRACKER
+    =========================================================
 
-    The staff member who requested the close
-    gets the ticketsClosed stat.
+    IMPORTANT FIX:
+    This is now isolated with try/catch.
 
-    For /forceclose, the admin using the command
-    gets the stat.
+    If incrementStat() fails, the close interaction still
+    succeeds and the user will NOT receive the generic
+    "Something went wrong handling that action" message.
   */
 
-  incrementStat(
-    interaction.guild,
-    closerId,
-    'ticketsClosed'
-  ).catch(
-    (err) => {
-      console.error(
-        'Failed to update staff tracker for ticket close:',
-        err
+  try {
+
+    await incrementStat(
+      interaction.guild,
+      closerId,
+      'ticketsClosed'
+    );
+
+  } catch (err) {
+
+    console.error(
+      'Failed to update staff tracker for ticket close:',
+      err
+    );
+  }
+
+
+  /*
+    =========================================================
+    PARTNER / GIVEAWAY STATISTICS
+    =========================================================
+  */
+
+  try {
+
+    if (
+      meta.categoryId ===
+      'partner'
+    ) {
+
+      await incrementStat(
+        interaction.guild,
+        closerId,
+        'partnersCompleted'
+      );
+
+    } else if (
+      meta.categoryId ===
+      'giveaway_sponsor'
+    ) {
+
+      await incrementStat(
+        interaction.guild,
+        closerId,
+        'giveawaysSponsored'
       );
     }
-  );
 
+  } catch (err) {
 
-  if (
-    meta.categoryId ===
-    'partner'
-  ) {
-
-    incrementStat(
-      interaction.guild,
-      closerId,
-      'partnersCompleted'
-    ).catch(
-      () => {}
-    );
-  }
-
-
-  else if (
-    meta.categoryId ===
-    'giveaway_sponsor'
-  ) {
-
-    incrementStat(
-      interaction.guild,
-      closerId,
-      'giveawaysSponsored'
-    ).catch(
-      () => {}
+    console.error(
+      'Failed to update additional ticket close stat:',
+      err
     );
   }
 
 
   /*
+    =========================================================
     CROSS-SERVER TICKET LOG
+    =========================================================
   */
 
-  logTicketClose(
-    interaction.client,
-    {
-      channelName:
-        interaction.channel.name,
+  try {
 
-      ownerId:
-        meta.userId,
+    await logTicketClose(
+      interaction.client,
+      {
+        channelName:
+          interaction.channel.name,
 
-      closerId,
+        ownerId:
+          meta.userId,
 
-      confirmedBy,
+        closerId,
 
-      forced,
+        confirmedBy,
 
-      categoryId:
-        meta.categoryId,
+        forced,
 
-      reason:
-        pending.reason,
-    }
-  ).catch(
-    () => {}
-  );
+        categoryId:
+          meta.categoryId,
+
+        reason:
+          pending.reason,
+      }
+    );
+
+  } catch (err) {
+
+    console.error(
+      'Failed to log ticket close:',
+      err
+    );
+  }
 
 
   /*
-    EXISTING TRANSCRIPT SYSTEM
+    =========================================================
+    TRANSCRIPT SYSTEM
+    =========================================================
   */
 
   try {
@@ -1722,6 +1800,12 @@ async function performTicketClose(
     }
 
 
+    /*
+      =======================================================
+      DM TRANSCRIPT TO TICKET OWNER
+      =======================================================
+    */
+
     const opener =
       await interaction.guild.members
         .fetch(
@@ -1748,13 +1832,22 @@ async function performTicketClose(
           dmAttachment,
         ],
       }).catch(
-        () => {}
+        (err) => {
+          console.error(
+            'Failed to DM ticket transcript:',
+            err
+          );
+        }
       );
     }
 
-  }
+  } catch (err) {
 
-  catch (err) {
+    /*
+      Transcript failures should NEVER break the close
+      interaction because the close embed has already
+      been sent successfully.
+    */
 
     console.error(
       'Failed to build/send transcript:',
@@ -1763,13 +1856,24 @@ async function performTicketClose(
   }
 
 
+  /*
+    =========================================================
+    DELETE CHANNEL
+    =========================================================
+  */
+
   setTimeout(
     () => {
 
       interaction.channel
         .delete()
         .catch(
-          () => {}
+          (err) => {
+            console.error(
+              'Failed to delete closed ticket channel:',
+              err
+            );
+          }
         );
 
     },
