@@ -14,7 +14,7 @@ module.exports = {
     startDailyQuoteLoop(client);
 
     const statuses = [
-      { name: 'its a void era', type: 2 },
+      { name: 'looking for staff so apply', type: 2 },
       { dynamic: 'memberCount', type: 3 },
     ];
 
