@@ -29,18 +29,7 @@ const {
 
 module.exports = {
 
-  /*
-    messageCreate is intentionally NOT registered here.
-
-    events/messageCreate.js already handles messageCreate
-    and calls logMessageCreate().
-
-    Having it here as well would cause every message to
-    be logged multiple times.
-  */
-
   name: 'logger',
-
 
   register(client) {
 
