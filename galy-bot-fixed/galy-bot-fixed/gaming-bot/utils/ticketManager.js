@@ -1304,14 +1304,18 @@ async function forceCloseTicket(
 
 
   if (!meta) {
+
     return interaction.reply({
       content:
         '❌ This does not look like a ticket channel.',
-      ephemeral: true,
+      ephemeral:
+        true,
     });
+
   }
 
 
+  // Admin OR Mod can force close
   const isAdminRole =
     (
       config.adminRoleIds ||
@@ -1319,7 +1323,25 @@ async function forceCloseTicket(
     ).some(
       (roleId) =>
         roleId &&
-        !roleId.startsWith('PUT_') &&
+        !roleId.startsWith(
+          'PUT_'
+        ) &&
+        interaction.member.roles.cache.has(
+          roleId
+        )
+    );
+
+
+  const isModRole =
+    (
+      config.modRoleIds ||
+      []
+    ).some(
+      (roleId) =>
+        roleId &&
+        !roleId.startsWith(
+          'PUT_'
+        ) &&
         interaction.member.roles.cache.has(
           roleId
         )
@@ -1334,13 +1356,17 @@ async function forceCloseTicket(
 
   if (
     !isAdminRole &&
+    !isModRole &&
     !isAdministrator
   ) {
+
     return interaction.reply({
       content:
-        '❌ Only administrators can force close tickets.',
-      ephemeral: true,
+        '❌ You need the **Mod** role to force close tickets.',
+      ephemeral:
+        true,
     });
+
   }
 
 
@@ -1352,11 +1378,14 @@ async function forceCloseTicket(
   return performTicketClose(
     interaction,
     {
-      forced: true,
+      forced:
+        true,
+
       reason:
-        'Force closed by administrator.',
+        'Force closed by moderator.',
     }
   );
+
 }
 
 
