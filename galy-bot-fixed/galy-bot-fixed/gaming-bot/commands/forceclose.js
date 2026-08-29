@@ -1,66 +1,42 @@
-const {
-  SlashCommandBuilder,
-} = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 
 const {
   forceCloseTicket,
 } = require('../utils/ticketManager');
 
 const {
+  isAdmin,
   isMod,
 } = require('../utils/permissions');
 
 
 module.exports = {
 
-  data:
-    new SlashCommandBuilder()
-      .setName(
-        'forceclose'
-      )
-      .setDescription(
-        'Force close the current ticket without owner confirmation.'
-      ),
+  data: new SlashCommandBuilder()
+    .setName('forceclose')
+    .setDescription('Force close the current ticket.'),
 
+  async execute(interaction) {
 
-  async execute(
-    interaction
-  ) {
-
-    if (
-      !interaction.guild
-    ) {
-
+    if (!interaction.guild) {
       return interaction.reply({
-        content:
-          '❌ This command can only be used in a server.',
-        ephemeral:
-          true,
+        content: '❌ This command can only be used in a server.',
+        ephemeral: true,
       });
-
     }
 
-
-    // Require the Mod role
+    // Admin OR Mod can use /forceclose
     if (
-      !isMod(
-        interaction.member
-      )
+      !isAdmin(interaction.member) &&
+      !isMod(interaction.member)
     ) {
-
       return interaction.reply({
-        content:
-          '❌ You need the **Mod** role to use this command.',
-        ephemeral:
-          true,
+        content: '❌ You need the **Mod** role to use this command.',
+        ephemeral: true,
       });
-
     }
 
-
-    await forceCloseTicket(
-      interaction
-    );
+    await forceCloseTicket(interaction);
 
   },
 
