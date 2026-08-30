@@ -35,8 +35,12 @@
     }
   ],
 
-  "maxOpenTicketsPerUser": 2,
-  "closeCountdownSeconds": 2,
+"maxOpenTicketsPerUser": 2,
+"closeCountdownSeconds": 2,
+
+"giveawayCheckChannelIds": [
+  "1526932819996180510"
+],
 
   "panel": {
     "title": "",
