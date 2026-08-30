@@ -5,28 +5,16 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-} = require('discord.js');
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require("discord.js");
 
-const config = require('../config.json');
+const config = require("../config.json");
 
-const { buildTranscript } =
-  require('./transcript');
-
-const {
-  buildApplicationEmbed,
-  buildDecisionRow,
-} =
-  require('./applicationManager');
-
-const {
-  incrementStat,
-} =
-  require('./staffTracker');
-
-const {
-  logTicketClose,
-} =
-  require('./logger');
+const { buildTranscript } = require("./transcript");
+const { incrementStat } = require("./staffTracker");
+const { logTicketClose } = require("./logger");
 
 
 /* =========================================================
@@ -34,23 +22,13 @@ const {
 ========================================================= */
 
 function parseTopic(topic) {
-  if (
-    !topic ||
-    !topic.startsWith('ticket|')
-  ) {
+  if (!topic || !topic.startsWith("ticket|")) {
     return null;
   }
 
-  const [
-    ,
-    userId,
-    categoryId,
-  ] = topic.split('|');
+  const [, userId, categoryId] = topic.split("|");
 
-  if (
-    !userId ||
-    !categoryId
-  ) {
+  if (!userId || !categoryId) {
     return null;
   }
 
@@ -61,85 +39,49 @@ function parseTopic(topic) {
 }
 
 
-function countOpenTicketsForUser(
-  guild,
-  userId
-) {
-  return guild.channels.cache.filter(
-    (channel) => {
-      const data =
-        parseTopic(channel.topic);
+function countOpenTicketsForUser(guild, userId) {
+  return guild.channels.cache.filter((channel) => {
+    const data = parseTopic(channel.topic);
 
-      return (
-        data &&
-        data.userId === userId
-      );
-    }
-  ).size;
+    return data && data.userId === userId;
+  }).size;
 }
 
 
 /* =========================================================
-   GIVEAWAY CONFIG
+   GIVEAWAYBOT
 ========================================================= */
 
-const GIVEAWAY_BOT_ID =
-  '294882584201003009';
+const GIVEAWAY_BOT_ID = "294882584201003009";
 
 
 function getGiveawayChannelIds() {
   const ids = [];
 
-  if (
-    Array.isArray(
-      config.giveawayChannelIds
-    )
-  ) {
-    ids.push(
-      ...config.giveawayChannelIds
-    );
+  if (Array.isArray(config.giveawayChannelIds)) {
+    ids.push(...config.giveawayChannelIds);
   }
 
-  if (
-    Array.isArray(
-      config.giveaway_channel_ids
-    )
-  ) {
-    ids.push(
-      ...config.giveaway_channel_ids
-    );
+  if (Array.isArray(config.giveaway_channel_ids)) {
+    ids.push(...config.giveaway_channel_ids);
   }
 
-  if (
-    config.giveawayChannelId
-  ) {
-    ids.push(
-      config.giveawayChannelId
-    );
+  if (config.giveawayChannelId) {
+    ids.push(config.giveawayChannelId);
   }
 
-  if (
-    config.giveaway_channel_id
-  ) {
-    ids.push(
-      config.giveaway_channel_id
-    );
+  if (config.giveaway_channel_id) {
+    ids.push(config.giveaway_channel_id);
   }
 
-  return [
-    ...new Set(
-      ids
-        .filter(Boolean)
-        .map(String)
-    ),
-  ];
+  return [...new Set(ids.filter(Boolean).map(String))];
 }
 
 
 function normaliseName(name) {
-  return String(name || '')
+  return String(name || "")
     .toLowerCase()
-    .replace(/^@/, '')
+    .replace(/^@/, "")
     .trim();
 }
 
@@ -156,106 +98,61 @@ function getUserNames(user) {
 }
 
 
-function textContainsUsername(
-  text,
-  names
-) {
-  const value =
-    normaliseName(text);
+function textContainsUsername(text, names) {
+  const value = normaliseName(text);
 
   if (!value) {
     return false;
   }
 
-  return names.some(
-    (name) => {
-      if (!name) {
-        return false;
-      }
-
-      return (
-        value === name ||
-        value.includes(name)
-      );
+  return names.some((name) => {
+    if (!name) {
+      return false;
     }
-  );
+
+    return (
+      value === name ||
+      value.includes(name)
+    );
+  });
 }
 
 
-function messageContainsUser(
-  message,
-  user
-) {
+function messageContainsUser(message, user) {
   /*
-   * ID check first.
-   *
-   * This is the safest way to identify
-   * the winner when GiveawayBot mentions them.
+   * First check mentions.
    */
-  if (
-    message.mentions?.users?.has(
-      user.id
-    )
-  ) {
-    return true;
-  }
-
-  const names =
-    getUserNames(user);
-
-  /*
-   * Check normal message content.
-   */
-  if (
-    textContainsUsername(
-      message.content,
-      names
-    )
-  ) {
+  if (message.mentions?.users?.has(user.id)) {
     return true;
   }
 
   /*
-   * Check embeds.
+   * Then check the user's username,
+   * display name and global name.
    */
-  for (
-    const embed of
-    message.embeds || []
-  ) {
+  const names = getUserNames(user);
+
+  if (textContainsUsername(message.content, names)) {
+    return true;
+  }
+
+  /*
+   * Check every part of every embed.
+   */
+  for (const embed of message.embeds || []) {
     if (
-      textContainsUsername(
-        embed.title,
-        names
-      ) ||
-      textContainsUsername(
-        embed.description,
-        names
-      ) ||
-      textContainsUsername(
-        embed.footer?.text,
-        names
-      ) ||
-      textContainsUsername(
-        embed.author?.name,
-        names
-      )
+      textContainsUsername(embed.title, names) ||
+      textContainsUsername(embed.description, names) ||
+      textContainsUsername(embed.footer?.text, names) ||
+      textContainsUsername(embed.author?.name, names)
     ) {
       return true;
     }
 
-    for (
-      const field of
-      embed.fields || []
-    ) {
+    for (const field of embed.fields || []) {
       if (
-        textContainsUsername(
-          field.name,
-          names
-        ) ||
-        textContainsUsername(
-          field.value,
-          names
-        )
+        textContainsUsername(field.name, names) ||
+        textContainsUsername(field.value, names)
       ) {
         return true;
       }
@@ -266,152 +163,135 @@ function messageContainsUser(
 }
 
 
-function isGiveawayBotMessage(
-  message
-) {
-  return (
-    message?.author?.id ===
-    GIVEAWAY_BOT_ID
-  );
+function isGiveawayBotMessage(message) {
+  return message?.author?.id === GIVEAWAY_BOT_ID;
 }
 
 
-function isEndedGiveawayMessage(
-  message
-) {
-  const content =
-    String(
-      message.content || ''
-    ).toLowerCase();
+function getMessageText(message) {
+  const parts = [];
 
-  const embedText =
-    (message.embeds || [])
-      .map(
-        (embed) =>
-          [
-            embed.title,
-            embed.description,
-            embed.footer?.text,
-            ...(embed.fields || [])
-              .flatMap(
-                (field) => [
-                  field.name,
-                  field.value,
-                ]
-              ),
-          ]
-            .filter(Boolean)
-            .join('\n')
-      )
-      .join('\n')
-      .toLowerCase();
+  if (message.content) {
+    parts.push(message.content);
+  }
 
-  const text =
-    `${content}\n${embedText}`;
+  for (const embed of message.embeds || []) {
+    if (embed.title) {
+      parts.push(embed.title);
+    }
 
-  return (
-    text.includes(
-      'giveaway ended'
-    ) ||
-    text.includes(
-      'giveaway has ended'
-    ) ||
-    text.includes(
-      'winner'
-    ) ||
-    text.includes(
-      'winners'
-    )
-  );
+    if (embed.description) {
+      parts.push(embed.description);
+    }
+
+    if (embed.footer?.text) {
+      parts.push(embed.footer.text);
+    }
+
+    if (embed.author?.name) {
+      parts.push(embed.author.name);
+    }
+
+    for (const field of embed.fields || []) {
+      if (field.name) {
+        parts.push(field.name);
+      }
+
+      if (field.value) {
+        parts.push(field.value);
+      }
+    }
+  }
+
+  return parts.join("\n").toLowerCase();
+}
+
+
+function isWinnerMessage(message, user) {
+  if (!isGiveawayBotMessage(message)) {
+    return false;
+  }
+
+  const text = getMessageText(message);
+
+  /*
+   * GiveawayBot can display winners in different ways.
+   * We look for winner-related wording AND the user.
+   */
+  const winnerWords = [
+    "winner",
+    "winners",
+    "congratulations",
+    "congrats",
+    "won",
+  ];
+
+  const looksLikeWinnerMessage =
+    winnerWords.some((word) => text.includes(word));
+
+  if (!looksLikeWinnerMessage) {
+    return false;
+  }
+
+  return messageContainsUser(message, user);
 }
 
 
 function extractPrize(message) {
-  for (
-    const embed of
-    message.embeds || []
-  ) {
-    if (
-      embed.title
-    ) {
-      const title =
-        String(embed.title);
-
+  for (const embed of message.embeds || []) {
+    for (const field of embed.fields || []) {
       if (
-        /giveaway/i.test(title) &&
-        !/ended/i.test(title)
+        /prize|reward/i.test(field.name || "")
       ) {
-        return title
-          .replace(
-            /giveaway/gi,
-            ''
-          )
+        return String(field.value || "")
+          .split("\n")[0]
           .trim();
       }
     }
 
-    if (
-      embed.description
-    ) {
-      const description =
-        String(
-          embed.description
-        );
+    if (embed.description) {
+      const match = String(embed.description).match(
+        /(?:prize|reward)\s*[:\-]\s*(.+)/i
+      );
 
-      const prizeMatch =
-        description.match(
-          /(?:prize|reward)\s*[:\-]\s*(.+)/i
-        );
-
-      if (prizeMatch) {
-        return prizeMatch[1]
-          .split('\n')[0]
-          .trim();
-      }
-    }
-
-    for (
-      const field of
-      embed.fields || []
-    ) {
-      if (
-        /prize|reward/i.test(
-          field.name || ''
-        )
-      ) {
-        return String(
-          field.value ||
-          'Unknown prize'
-        )
-          .split('\n')[0]
+      if (match) {
+        return match[1]
+          .split("\n")[0]
           .trim();
       }
     }
   }
 
-  const content =
-    String(
-      message.content || ''
-    );
+  const content = String(message.content || "");
 
-  const match =
-    content.match(
-      /(?:prize|reward)\s*[:\-]\s*(.+)/i
-    );
+  const match = content.match(
+    /(?:prize|reward)\s*[:\-]\s*(.+)/i
+  );
 
   if (match) {
     return match[1]
-      .split('\n')[0]
+      .split("\n")[0]
       .trim();
   }
 
-  return 'Unknown prize';
+  /*
+   * If GiveawayBot's message doesn't use
+   * "Prize:", try the embed title.
+   */
+  const title = message.embeds?.[0]?.title;
+
+  if (title) {
+    return String(title)
+      .replace(/giveaway/gi, "")
+      .replace(/ended/gi, "")
+      .trim() || "Unknown prize";
+  }
+
+  return "Unknown prize";
 }
 
 
-function getGiveawayJumpUrl(
-  message
-) {
+function getGiveawayJumpUrl(message) {
   return (
     `https://discord.com/channels/` +
     `${message.guildId}/` +
@@ -422,188 +302,122 @@ function getGiveawayJumpUrl(
 
 
 /* =========================================================
-   GIVEAWAY SCANNER
+   SCAN GIVEAWAY CHANNELS
 ========================================================= */
 
-async function findGiveawayWins(
-  guild,
-  user
-) {
+async function findGiveawayWins(guild, user) {
   const results = [];
 
-  const channelIds =
-    getGiveawayChannelIds();
+  const channelIds = getGiveawayChannelIds();
 
   if (!channelIds.length) {
+    console.log(
+      "⚠️ No giveaway channel IDs are configured."
+    );
+
     return results;
   }
 
-  for (
-    const channelId of
-    channelIds
-  ) {
+  for (const channelId of channelIds) {
     try {
-      const channel =
-        await guild.channels
-          .fetch(channelId)
-          .catch(() => null);
+      const channel = await guild.channels
+        .fetch(channelId)
+        .catch(() => null);
 
-      if (
-        !channel ||
-        !channel.isTextBased()
-      ) {
+      if (!channel || !channel.isTextBased()) {
         continue;
       }
 
-      let before = undefined;
+      let before;
 
       /*
-       * Search up to 1000 GiveawayBot
-       * messages per configured channel.
-       *
-       * This prevents an enormous
-       * history scan.
+       * Scan up to 2000 messages per channel.
        */
-      for (
-        let page = 0;
-        page < 10;
-        page++
-      ) {
-        const messages =
-          await channel.messages.fetch({
-            limit: 100,
-            ...(before
-              ? { before }
-              : {}),
-          });
+      for (let page = 0; page < 20; page++) {
+        const messages = await channel.messages.fetch({
+          limit: 100,
+          ...(before ? { before } : {}),
+        });
 
-        if (
-          !messages.size
-        ) {
+        if (!messages.size) {
           break;
         }
 
-        for (
-          const message of
-          messages.values()
-        ) {
+        for (const message of messages.values()) {
           /*
-           * IMPORTANT:
+           * VERY IMPORTANT:
            *
-           * Only official GiveawayBot
-           * messages are checked.
-           *
-           * This means Void's own
-           * giveaway messages are ignored.
+           * Only official GiveawayBot messages.
            */
-          if (
-            !isGiveawayBotMessage(
-              message
-            )
-          ) {
+          if (!isGiveawayBotMessage(message)) {
             continue;
           }
 
-          if (
-            !isEndedGiveawayMessage(
-              message
-            )
-          ) {
-            continue;
-          }
-
-          if (
-            !messageContainsUser(
-              message,
-              user
-            )
-          ) {
+          if (!isWinnerMessage(message, user)) {
             continue;
           }
 
           results.push({
-            prize:
-              extractPrize(
-                message
-              ),
-
-            channelId:
-              channel.id,
-
-            channelName:
-              channel.name,
-
-            messageId:
-              message.id,
-
-            jumpUrl:
-              getGiveawayJumpUrl(
-                message
-              ),
+            prize: extractPrize(message),
+            channelId: channel.id,
+            channelName: channel.name,
+            messageId: message.id,
+            jumpUrl: getGiveawayJumpUrl(message),
           });
         }
 
-        const last =
-          messages.last();
+        const lastMessage = messages.last();
 
-        if (!last) {
+        if (!lastMessage) {
           break;
         }
 
-        before =
-          last.id;
+        before = lastMessage.id;
 
-        if (
-          messages.size < 100
-        ) {
+        if (messages.size < 100) {
           break;
         }
       }
     } catch (error) {
       /*
-       * Giveaway scanning errors must
-       * NEVER prevent ticket creation.
+       * Giveaway scanning must NEVER
+       * stop the ticket from being created.
        */
       console.error(
-        `Giveaway scan failed for channel ${channelId}:`,
+        `❌ Giveaway scan failed in ${channelId}:`,
         error
       );
     }
   }
 
   /*
-   * Remove duplicate giveaway messages.
+   * Remove duplicate results.
    */
-  const seen =
-    new Set();
+  const seen = new Set();
 
-  return results.filter(
-    (result) => {
-      const key =
-        `${result.channelId}:${result.messageId}`;
+  return results.filter((result) => {
+    const key =
+      `${result.channelId}:${result.messageId}`;
 
-      if (
-        seen.has(key)
-      ) {
-        return false;
-      }
-
-      seen.add(key);
-
-      return true;
+    if (seen.has(key)) {
+      return false;
     }
-  );
+
+    seen.add(key);
+    return true;
+  });
 }
 
 
-function buildGiveawayResultsText(
-  wins
-) {
-  if (
-    !wins.length
-  ) {
+/* =========================================================
+   GIVEAWAY EMBED
+========================================================= */
+
+function buildGiveawayResultsText(wins) {
+  if (!wins.length) {
     return (
-      '❌ No GiveawayBot wins were found for this user.'
+      "❌ **No GiveawayBot wins were found for you.**\n\n" +
+      "Make sure the giveaway is in one of the configured giveaway channels."
     );
   }
 
@@ -611,46 +425,26 @@ function buildGiveawayResultsText(
     .map(
       (win, index) =>
         `🏆 **Win ${index + 1}:** ${win.prize}\n` +
-        `📍 ${win.channelName}`
+        `📍 Channel: <#${win.channelId}>`
     )
-    .join('\n\n');
+    .join("\n\n");
 }
 
 
-function buildGiveawayJumpButtons(
-  wins
-) {
+function buildGiveawayJumpButtons(wins) {
   const rows = [];
 
-  for (
-    let i = 0;
-    i < wins.length;
-    i += 5
-  ) {
-    const row =
-      new ActionRowBuilder();
+  for (let i = 0; i < wins.length; i += 5) {
+    const row = new ActionRowBuilder();
 
-    wins
-      .slice(i, i + 5)
-      .forEach(
-        (win, index) => {
-          const number =
-            i + index + 1;
-
-          row.addComponents(
-            new ButtonBuilder()
-              .setLabel(
-                `Jump to Win ${number}`
-              )
-              .setStyle(
-                ButtonStyle.Link
-              )
-              .setURL(
-                win.jumpUrl
-              )
-          );
-        }
+    wins.slice(i, i + 5).forEach((win, index) => {
+      row.addComponents(
+        new ButtonBuilder()
+          .setLabel(`Jump to Win ${i + index + 1}`)
+          .setStyle(ButtonStyle.Link)
+          .setURL(win.jumpUrl)
       );
+    });
 
     rows.push(row);
   }
@@ -660,119 +454,66 @@ function buildGiveawayJumpButtons(
 
 
 /* =========================================================
-   HELPERS
+   EMBEDS
 ========================================================= */
 
-function makeErrorEmbed(
-  message
-) {
+function makeErrorEmbed(message) {
   return new EmbedBuilder()
     .setColor(0xff0000)
-    .setDescription(
-      `❌ ${message}`
-    );
+    .setDescription(`❌ ${message}`);
 }
 
 
-function makeSuccessEmbed(
-  message
-) {
+function makeSuccessEmbed(message) {
   return new EmbedBuilder()
     .setColor(0x00ff00)
-    .setDescription(
-      `✅ ${message}`
-    );
+    .setDescription(`✅ ${message}`);
 }
 
+
+/* =========================================================
+   TICKET BUTTONS
+========================================================= */
 
 function buildTicketControlRow() {
-  return new ActionRowBuilder()
-    .addComponents(
-      new ButtonBuilder()
-        .setCustomId(
-          'ticket:close'
-        )
-        .setLabel(
-          'Close Ticket'
-        )
-        .setEmoji('🔒')
-        .setStyle(
-          ButtonStyle.Danger
-        )
-    );
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("ticket:close")
+      .setLabel("Close Ticket")
+      .setEmoji("🔒")
+      .setStyle(ButtonStyle.Danger)
+  );
 }
 
+
+/* =========================================================
+   CLAIM MODAL
+========================================================= */
 
 function buildClaimModal() {
   return new ModalBuilder()
-    .setCustomId(
-      'ticket:claim:questions'
-    )
-    .setTitle(
-      'Giveaway Claim'
-    )
+    .setCustomId("ticket:claim:questions")
+    .setTitle("Giveaway Claim")
     .addComponents(
-      new ActionRowBuilder()
-        .addComponents(
-          new TextInputBuilder()
-            .setCustomId(
-              'amount'
-            )
-            .setLabel(
-              'How much did you win?'
-            )
-            .setStyle(
-              TextInputStyle.Short
-            )
-            .setRequired(
-              true
-            )
-            .setMaxLength(
-              200
-            )
-        ),
-
-      new ActionRowBuilder()
-        .addComponents(
-          new TextInputBuilder()
-            .setCustomId(
-              'host'
-            )
-            .setLabel(
-              'Who was the giveaway hosted by?'
-            )
-            .setStyle(
-              TextInputStyle.Short
-            )
-            .setRequired(
-              true
-            )
-            .setMaxLength(
-              200
-            )
-        )
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("amount")
+          .setLabel("What did you win?")
+          .setPlaceholder("Example: 1b")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(200)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("host")
+          .setLabel("Who hosted the giveaway?")
+          .setPlaceholder("Example: forrealrob")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(200)
+      )
     );
-}
-
-
-function isGiveawayClaimTicket(
-  channel
-) {
-  const data =
-    parseTopic(
-      channel.topic
-    );
-
-  if (!data) {
-    return false;
-  }
-
-  return (
-    String(
-      data.categoryId
-    ).toLowerCase() ===
-    'giveaway_claim'
-  );
 }
 
 
@@ -780,120 +521,62 @@ function isGiveawayClaimTicket(
    OPEN TICKET
 ========================================================= */
 
-async function openTicket(
-  interaction,
-  categoryId
-) {
+async function openTicket(interaction, categoryId) {
   try {
-    if (
-      !interaction.guild
-    ) {
+    if (!interaction.guild) {
       return interaction.reply({
         embeds: [
           makeErrorEmbed(
-            'Tickets can only be opened inside a server.'
+            "Tickets can only be opened inside a server."
           ),
         ],
         ephemeral: true,
       });
     }
 
-    const guild =
-      interaction.guild;
+    const guild = interaction.guild;
 
-    const existing =
-      guild.channels.cache.find(
-        (channel) => {
-          const data =
-            parseTopic(
-              channel.topic
-            );
+    const existing = guild.channels.cache.find(
+      (channel) => {
+        const data = parseTopic(channel.topic);
 
-          return (
-            data &&
-            data.userId ===
-              interaction.user.id &&
-            data.categoryId ===
-              categoryId
-          );
-        }
-      );
+        return (
+          data &&
+          data.userId === interaction.user.id &&
+          data.categoryId === categoryId
+        );
+      }
+    );
 
-    /*
-     * Do NOT lock the ticket button
-     * permanently after it has been used.
-     *
-     * A closed ticket is deleted, so the
-     * user can open another one.
-     */
     if (existing) {
       return interaction.reply({
         embeds: [
           makeErrorEmbed(
-            `You already have an open **${categoryId}** ticket: ${existing}`
+            `You already have an open ticket: ${existing}`
           ),
         ],
         ephemeral: true,
       });
     }
 
-    const count =
-      countOpenTicketsForUser(
-        guild,
-        interaction.user.id
-      );
+    const count = countOpenTicketsForUser(
+      guild,
+      interaction.user.id
+    );
 
-    const maxTickets =
-      Number(
-        config.maxOpenTickets ||
-        config.max_open_tickets ||
-        1
-      );
+    const maxTickets = Number(
+      config.maxOpenTickets ||
+      config.max_open_tickets ||
+      1
+    );
 
-    if (
-      count >= maxTickets
-    ) {
+    if (count >= maxTickets) {
       return interaction.reply({
         embeds: [
           makeErrorEmbed(
-            `You already have the maximum of **${maxTickets}** open ticket${maxTickets === 1 ? '' : 's'}.`
-          ),
-        ],
-        ephemeral: true,
-      });
-    }
-
-    const botMember =
-      guild.members.me ||
-      await guild.members
-        .fetch(
-          interaction.client.user.id
-        );
-
-    const required =
-      [
-        PermissionsBitField.Flags.ViewChannel,
-        PermissionsBitField.Flags.SendMessages,
-        PermissionsBitField.Flags.ReadMessageHistory,
-        PermissionsBitField.Flags.ManageChannels,
-        PermissionsBitField.Flags.AttachFiles,
-      ];
-
-    const missing =
-      required.filter(
-        permission =>
-          !botMember.permissions.has(
-            permission
-          )
-      );
-
-    if (
-      missing.length
-    ) {
-      return interaction.reply({
-        embeds: [
-          makeErrorEmbed(
-            'I am missing the permissions required to create tickets.'
+            `You already have the maximum of ${maxTickets} open ticket${
+              maxTickets === 1 ? "" : "s"
+            }.`
           ),
         ],
         ephemeral: true,
@@ -904,182 +587,145 @@ async function openTicket(
       ephemeral: true,
     });
 
-    const category =
-      await guild.channels
-        .fetch(categoryId)
-        .catch(() => null);
+    const category = await guild.channels
+      .fetch(categoryId)
+      .catch(() => null);
 
     if (
       !category ||
-      category.type !==
-        ChannelType.GuildCategory
+      category.type !== ChannelType.GuildCategory
     ) {
       return interaction.editReply({
         embeds: [
           makeErrorEmbed(
-            'The configured ticket category could not be found.'
+            "The configured ticket category could not be found."
           ),
         ],
       });
     }
 
-    const safeUsername =
-      interaction.user.username
-        .toLowerCase()
-        .replace(
-          /[^a-z0-9-]/g,
-          '-'
-        )
-        .replace(
-          /-+/g,
-          '-'
-        )
-        .slice(0, 20) ||
-      'user';
+    const safeUsername = interaction.user.username
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .slice(0, 20) || "user";
 
-    const random =
-      Math.floor(
-        10000 +
-        Math.random() *
-          90000
-      );
-
-    const channel =
-      await guild.channels.create({
-        name:
-          `ticket-${safeUsername}-${random}`,
-
-        type:
-          ChannelType.GuildText,
-
-        parent:
-          category.id,
-
-        topic:
-          `ticket|${interaction.user.id}|${categoryId}`,
-
-        permissionOverwrites: [
-          {
-            id:
-              guild.roles.everyone.id,
-
-            deny: [
-              PermissionsBitField.Flags.ViewChannel,
-            ],
-          },
-
-          {
-            id:
-              interaction.user.id,
-
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory,
-              PermissionsBitField.Flags.AttachFiles,
-            ],
-          },
-
-          {
-            id:
-              interaction.client.user.id,
-
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory,
-              PermissionsBitField.Flags.ManageChannels,
-              PermissionsBitField.Flags.ManageMessages,
-              PermissionsBitField.Flags.AttachFiles,
-            ],
-          },
-        ],
-      });
+    const random = Math.floor(
+      10000 + Math.random() * 90000
+    );
 
     /*
-     * Add configured staff role.
+     * CREATE THE TICKET FIRST.
+     *
+     * This happens BEFORE the GiveawayBot scan,
+     * so the scan can never cause the ticket
+     * creation to fail.
      */
+    const channel = await guild.channels.create({
+      name: `ticket-${safeUsername}-${random}`,
+
+      type: ChannelType.GuildText,
+
+      parent: category.id,
+
+      topic: `ticket|${interaction.user.id}|${categoryId}`,
+
+      permissionOverwrites: [
+        {
+          id: guild.roles.everyone.id,
+
+          deny: [
+            PermissionsBitField.Flags.ViewChannel,
+          ],
+        },
+
+        {
+          id: interaction.user.id,
+
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.AttachFiles,
+          ],
+        },
+
+        {
+          id: interaction.client.user.id,
+
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.ManageChannels,
+            PermissionsBitField.Flags.ManageMessages,
+            PermissionsBitField.Flags.AttachFiles,
+          ],
+        },
+      ],
+    });
+
     const staffRoleId =
       config.ticketStaffRoleId ||
       config.ticket_staff_role_id ||
       config.transcriptRoleId ||
       config.transcript_role_id;
 
-    if (
-      staffRoleId
-    ) {
+    if (staffRoleId) {
       await channel.permissionOverwrites
-        .edit(
-          staffRoleId,
-          {
-            ViewChannel: true,
-            SendMessages: true,
-            ReadMessageHistory: true,
-            AttachFiles: true,
-          }
-        )
+        .edit(staffRoleId, {
+          ViewChannel: true,
+          SendMessages: true,
+          ReadMessageHistory: true,
+          AttachFiles: true,
+        })
         .catch(() => {});
     }
 
-    const ticketEmbed =
-      new EmbedBuilder()
-        .setTitle(
-          '🎫 Ticket'
-        )
-        .setDescription(
-          `Welcome ${interaction.user}!\n\n` +
-          `A member of the support team will help you shortly.\n\n` +
-          `When you are finished, click **Close Ticket** below.`
-        )
-        .setTimestamp();
-
     /*
-     * Giveaway claim check.
-     *
-     * This is deliberately wrapped in its own
-     * try/catch so a GiveawayBot/API/history
-     * problem cannot break ticket creation.
+     * NOW do the GiveawayBot scan.
      */
-    const isClaim =
-      String(categoryId)
-        .toLowerCase()
-        .includes(
-          'giveaway'
-        ) &&
-      String(categoryId)
-        .toLowerCase()
-        .includes(
-          'claim'
-        );
-
     let giveawayWins = [];
 
-    if (
-      isClaim
-    ) {
-      try {
-        giveawayWins =
-          await findGiveawayWins(
-            guild,
-            interaction.user
-          );
-      } catch (error) {
+    const categoryName =
+      String(category.name || "").toLowerCase();
+
+    const isClaim =
+      categoryName.includes("giveaway") &&
+      categoryName.includes("claim");
+
+    if (isClaim) {
+      giveawayWins = await findGiveawayWins(
+        guild,
+        interaction.user
+      ).catch((error) => {
         console.error(
-          'Giveaway lookup failed:',
+          "❌ Giveaway lookup failed:",
           error
         );
 
-        giveawayWins = [];
-      }
+        return [];
+      });
+    }
 
+    /*
+     * Build ONE embed.
+     */
+    const ticketEmbed = new EmbedBuilder()
+      .setTitle("🎫 Ticket")
+      .setDescription(
+        `Welcome ${interaction.user}!\n\n` +
+        `A member of the support team will help you shortly.`
+      )
+      .setTimestamp();
+
+    if (isClaim) {
       ticketEmbed.addFields({
-        name:
-          '🎁 Giveaway Check',
+        name: "🎁 GiveawayBot Win Check",
 
-        value:
-          buildGiveawayResultsText(
-            giveawayWins
-          ),
+        value: buildGiveawayResultsText(
+          giveawayWins
+        ),
       });
     }
 
@@ -1087,9 +733,7 @@ async function openTicket(
       buildTicketControlRow(),
     ];
 
-    if (
-      giveawayWins.length
-    ) {
+    if (giveawayWins.length) {
       components.push(
         ...buildGiveawayJumpButtons(
           giveawayWins
@@ -1103,7 +747,7 @@ async function openTicket(
         (
           staffRoleId
             ? ` <@&${staffRoleId}>`
-            : ''
+            : ""
         ),
 
       embeds: [
@@ -1124,7 +768,7 @@ async function openTicket(
     return channel;
   } catch (error) {
     console.error(
-      'TICKET CREATION ERROR:',
+      "❌ TICKET CREATION ERROR:",
       error
     );
 
@@ -1136,7 +780,7 @@ async function openTicket(
         .editReply({
           embeds: [
             makeErrorEmbed(
-              'Something went wrong while creating your ticket.'
+              "Something went wrong while creating your ticket."
             ),
           ],
         })
@@ -1147,7 +791,7 @@ async function openTicket(
       .reply({
         embeds: [
           makeErrorEmbed(
-            'Something went wrong while creating your ticket.'
+            "Something went wrong while creating your ticket."
           ),
         ],
         ephemeral: true,
@@ -1166,29 +810,26 @@ async function closeTicket(
   force = false
 ) {
   try {
-    if (
-      !interaction.guild
-    ) {
+    if (!interaction.guild) {
       return interaction.reply({
         embeds: [
           makeErrorEmbed(
-            'This can only be used inside a server.'
+            "This can only be used inside a server."
           ),
         ],
         ephemeral: true,
       });
     }
 
-    const data =
-      parseTopic(
-        interaction.channel?.topic
-      );
+    const data = parseTopic(
+      interaction.channel?.topic
+    );
 
     if (!data) {
       return interaction.reply({
         embeds: [
           makeErrorEmbed(
-            'This channel is not an open ticket.'
+            "This channel is not an open ticket."
           ),
         ],
         ephemeral: true,
@@ -1196,8 +837,7 @@ async function closeTicket(
     }
 
     const isOwner =
-      data.userId ===
-      interaction.user.id;
+      data.userId === interaction.user.id;
 
     const staffRoleId =
       config.ticketStaffRoleId ||
@@ -1233,7 +873,7 @@ async function closeTicket(
       return interaction.reply({
         embeds: [
           makeErrorEmbed(
-            'You do not have permission to close this ticket.'
+            "You do not have permission to close this ticket."
           ),
         ],
         ephemeral: true,
@@ -1244,27 +884,19 @@ async function closeTicket(
       ephemeral: true,
     });
 
-    /*
-     * Build transcript before deleting
-     * the channel.
-     */
     let transcript = null;
 
     try {
-      transcript =
-        await buildTranscript(
-          interaction.channel
-        );
+      transcript = await buildTranscript(
+        interaction.channel
+      );
     } catch (error) {
       console.error(
-        'Transcript generation failed:',
+        "❌ Transcript generation failed:",
         error
       );
     }
 
-    /*
-     * Send transcript to configured channel.
-     */
     const transcriptChannelId =
       config.transcriptChannelId ||
       config.transcript_channel_id;
@@ -1275,9 +907,7 @@ async function closeTicket(
     ) {
       const transcriptChannel =
         await interaction.guild.channels
-          .fetch(
-            transcriptChannelId
-          )
+          .fetch(transcriptChannelId)
           .catch(() => null);
 
       if (
@@ -1289,7 +919,7 @@ async function closeTicket(
             embeds: [
               new EmbedBuilder()
                 .setTitle(
-                  '📄 Ticket Transcript'
+                  "📄 Ticket Transcript"
                 )
                 .setDescription(
                   `Ticket: **${interaction.channel.name}**\n` +
@@ -1303,35 +933,28 @@ async function closeTicket(
               transcript,
             ],
           })
-          .catch(
-            error =>
-              console.error(
-                'Failed to send transcript:',
-                error
-              )
-          );
+          .catch((error) => {
+            console.error(
+              "❌ Failed to send transcript:",
+              error
+            );
+          });
       }
     }
 
-    /*
-     * Staff statistics.
-     */
     try {
       await incrementStat(
         interaction.guild.id,
         interaction.user.id,
-        'ticketsClosed'
+        "ticketsClosed"
       );
     } catch (error) {
       console.error(
-        'Failed to update ticket stats:',
+        "❌ Failed to update ticket stats:",
         error
       );
     }
 
-    /*
-     * Central logging.
-     */
     try {
       await logTicketClose(
         interaction.client,
@@ -1364,7 +987,7 @@ async function closeTicket(
       );
     } catch (error) {
       console.error(
-        'Ticket close logging failed:',
+        "❌ Ticket close logging failed:",
         error
       );
     }
@@ -1372,25 +995,22 @@ async function closeTicket(
     await interaction.editReply({
       embeds: [
         makeSuccessEmbed(
-          'Ticket closed. The transcript has been saved.'
+          "Ticket closed. The transcript has been saved."
         ),
       ],
     });
 
     await interaction.channel
-      .delete(
-        'Ticket closed'
-      )
-      .catch(
-        error =>
-          console.error(
-            'Failed to delete ticket channel:',
-            error
-          )
-      );
+      .delete("Ticket closed")
+      .catch((error) => {
+        console.error(
+          "❌ Failed to delete ticket channel:",
+          error
+        );
+      });
   } catch (error) {
     console.error(
-      'TICKET CLOSE ERROR:',
+      "❌ TICKET CLOSE ERROR:",
       error
     );
 
@@ -1402,7 +1022,7 @@ async function closeTicket(
         .editReply({
           embeds: [
             makeErrorEmbed(
-              'Something went wrong while closing the ticket.'
+              "Something went wrong while closing the ticket."
             ),
           ],
         })
@@ -1413,7 +1033,7 @@ async function closeTicket(
       .reply({
         embeds: [
           makeErrorEmbed(
-            'Something went wrong while closing the ticket.'
+            "Something went wrong while closing the ticket."
           ),
         ],
         ephemeral: true,
@@ -1424,29 +1044,22 @@ async function closeTicket(
 
 
 /* =========================================================
-   BUTTON / MODAL HANDLER
+   INTERACTION HANDLER
 ========================================================= */
 
-async function handle(
-  interaction
-) {
-  if (
-    !interaction.guildId
-  ) {
+async function handle(interaction) {
+  if (!interaction.guildId) {
     return;
   }
 
   /*
-   * CLOSE BUTTON
+   * CLOSE
    */
   if (
     interaction.isButton() &&
-    interaction.customId ===
-      'ticket:close'
+    interaction.customId === "ticket:close"
   ) {
-    return closeTicket(
-      interaction
-    );
+    return closeTicket(interaction);
   }
 
   /*
@@ -1454,29 +1067,25 @@ async function handle(
    */
   if (
     interaction.isButton() &&
-    interaction.customId ===
-      'ticket:forceclose'
+    interaction.customId === "ticket:forceclose"
   ) {
-    return closeTicket(
-      interaction,
-      true
-    );
+    return closeTicket(interaction, true);
   }
 
   /*
-   * TICKET OPEN BUTTON
+   * OPEN BUTTON
    */
   if (
     interaction.isButton() &&
     interaction.customId.startsWith(
-      'ticket:open:'
+      "ticket:open:"
     )
   ) {
     const categoryId =
       interaction.customId
-        .split(':')
+        .split(":")
         .slice(2)
-        .join(':');
+        .join(":");
 
     return openTicket(
       interaction,
@@ -1485,23 +1094,19 @@ async function handle(
   }
 
   /*
-   * TICKET DROPDOWN
+   * DROPDOWN
    */
   if (
     interaction.isStringSelectMenu() &&
     interaction.customId ===
-      'ticket:select'
+      "ticket:select"
   ) {
     const value =
       interaction.values[0];
 
     const categoryId =
-      value.startsWith(
-        'ticket:'
-      )
-        ? value.substring(
-            'ticket:'.length
-          )
+      value.startsWith("ticket:")
+        ? value.substring(7)
         : value;
 
     return openTicket(
@@ -1511,12 +1116,12 @@ async function handle(
   }
 
   /*
-   * GIVEAWAY CLAIM QUESTIONS
+   * CLAIM QUESTIONS
    */
   if (
     interaction.isButton() &&
     interaction.customId ===
-      'ticket:claim'
+      "ticket:claim"
   ) {
     return interaction.showModal(
       buildClaimModal()
@@ -1524,62 +1129,44 @@ async function handle(
   }
 
   /*
-   * GIVEAWAY CLAIM MODAL
+   * CLAIM SUBMISSION
    */
   if (
     interaction.isModalSubmit() &&
     interaction.customId ===
-      'ticket:claim:questions'
+      "ticket:claim:questions"
   ) {
     const amount =
       interaction.fields
         .getTextInputValue(
-          'amount'
+          "amount"
         )
         .trim();
 
     const host =
       interaction.fields
         .getTextInputValue(
-          'host'
+          "host"
         )
         .trim();
-
-    const data =
-      parseTopic(
-        interaction.channel?.topic
-      );
-
-    if (!data) {
-      return interaction.reply({
-        embeds: [
-          makeErrorEmbed(
-            'This is not a valid ticket.'
-          ),
-        ],
-        ephemeral: true,
-      });
-    }
 
     const wins =
       await findGiveawayWins(
         interaction.guild,
         interaction.user
-      ).catch(
-        error => {
-          console.error(
-            'Giveaway check failed:',
-            error
-          );
+      ).catch((error) => {
+        console.error(
+          "❌ Giveaway check failed:",
+          error
+        );
 
-          return [];
-        }
-      );
+        return [];
+      });
 
     const embed =
       new EmbedBuilder()
         .setTitle(
-          '🎁 Giveaway Claim'
+          "🎁 Giveaway Claim"
         )
         .setDescription(
           `${interaction.user} has submitted a giveaway claim.`
@@ -1587,23 +1174,21 @@ async function handle(
         .addFields(
           {
             name:
-              '💰 What did they win?',
+              "💰 What did they win?",
             value:
-              amount ||
-              'Not provided',
+              amount || "Not provided",
             inline: true,
           },
           {
             name:
-              '👤 Who hosted it?',
+              "👤 Who hosted the giveaway?",
             value:
-              host ||
-              'Not provided',
+              host || "Not provided",
             inline: true,
           },
           {
             name:
-              '🔎 GiveawayBot Check',
+              "🔎 GiveawayBot Check",
             value:
               buildGiveawayResultsText(
                 wins
@@ -1628,7 +1213,7 @@ async function handle(
     return interaction.reply({
       embeds: [
         makeSuccessEmbed(
-          'Your giveaway claim has been submitted.'
+          "Your giveaway claim has been submitted."
         ),
       ],
       ephemeral: true,
