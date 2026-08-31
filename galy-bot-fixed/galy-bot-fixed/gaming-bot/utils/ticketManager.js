@@ -306,34 +306,27 @@ function isGiveawayClaimTicket(
   );
 }
 
-
 function getGiveawayChannelIds() {
-const ids =
-  config.giveawayCheckChannelIds ||
-  config.giveawayChannelIds ||
-  config.giveawayChannels ||
-  [];
+  const ids =
+    config.giveawayCheckChannelIds ||
+    config.giveawayChannelIds ||
+    config.giveawayChannels ||
+    [];
 
-  if (
-    !Array.isArray(
-      configured
-    )
-  ) {
+  if (!Array.isArray(ids)) {
     return [];
   }
 
   return [
     ...new Set(
-      configured
-        .map(String)
-        .filter(
-          (id) =>
-            /^\d{17,20}$/.test(id)
-        )
+      ids.filter(
+        (id) =>
+          typeof id === 'string' &&
+          /^\d{17,20}$/.test(id)
+      )
     ),
   ];
 }
-
 
 function normaliseWinnerText(
   value
