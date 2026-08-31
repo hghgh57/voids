@@ -16,8 +16,14 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    if (!interaction.inGuild()) {
+      return interaction.reply({
+        content:
+          '❌ This command can only be used in a server.',
+        ephemeral: true,
+      });
+    }
 
-    // ADMIN ONLY
     if (
       !interaction.memberPermissions?.has(
         PermissionFlagsBits.Administrator
@@ -30,16 +36,6 @@ module.exports = {
       });
     }
 
-    // Must be inside a server
-    if (!interaction.inGuild()) {
-      return interaction.reply({
-        content:
-          '❌ This command can only be used inside a server.',
-        ephemeral: true,
-      });
-    }
-
-    // Force close the ticket
     await forceCloseTicket(interaction);
   },
 };
