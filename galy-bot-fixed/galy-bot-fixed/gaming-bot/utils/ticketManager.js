@@ -2756,6 +2756,44 @@ async function forceCloseTicket(
   );
 }
 
+/* =========================================================
+   FORCE CLOSE TICKET
+========================================================= */
+
+async function forceCloseTicket(interaction) {
+  const meta = parseTopic(interaction.channel.topic);
+
+  if (!meta) {
+    return interaction.reply({
+      content: '❌ This does not look like a ticket channel.',
+      ephemeral: true,
+    });
+  }
+
+  // ADMIN ONLY
+  const isAdmin =
+    interaction.memberPermissions?.has(
+      PermissionsBitField.Flags.Administrator
+    ) ||
+    interaction.member?.permissions?.has(
+      PermissionsBitField.Flags.Administrator
+    );
+
+  if (!isAdmin) {
+    return interaction.reply({
+      content:
+        '❌ You need **Administrator** permission to use `/forceclose`.',
+      ephemeral: true,
+    });
+  }
+
+  console.log(
+    `[FORCECLOSE] ${interaction.user.tag} force closing ${interaction.channel.name}`
+  );
+
+  // Force close immediately — no ticket-owner confirmation.
+  return finalizeCloseTicket(interaction);
+}
 
 /* =========================================================
    EXPORTS
