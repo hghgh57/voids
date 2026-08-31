@@ -1,28 +1,15 @@
-const config = require('../config.json');
-
-function isAdmin(member) {
-  const roleIds = config.adminRoleIds || [];
-
-  return roleIds.some(
-    (id) =>
-      id &&
-      !id.startsWith('PUT_') &&
-      member.roles.cache.has(id)
+const isAdministrator =
+  interaction.memberPermissions?.has(
+    PermissionsBitField.Flags.Administrator
+  ) ||
+  interaction.member?.permissions?.has(
+    PermissionsBitField.Flags.Administrator
   );
+
+if (!isAdministrator) {
+  return interaction.reply({
+    content:
+      '❌ You need **Administrator** permission to force close tickets.',
+    ephemeral: true,
+  });
 }
-
-function isMod(member) {
-  const roleIds = config.modRoleIds || [];
-
-  return roleIds.some(
-    (id) =>
-      id &&
-      !id.startsWith('PUT_') &&
-      member.roles.cache.has(id)
-  );
-}
-
-module.exports = {
-  isAdmin,
-  isMod,
-};
