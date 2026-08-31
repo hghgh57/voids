@@ -2688,74 +2688,6 @@ async function cancelCloseTicket(
   });
 }
 
-
-/* =========================================================
-   FORCE CLOSE TICKET
-========================================================= */
-
-async function forceCloseTicket(
-  interaction
-) {
-
-  if (
-    !interaction.memberPermissions?.has(
-      PermissionsBitField.Flags.Administrator
-    )
-  ) {
-
-    return interaction.reply({
-
-      content:
-        'Only server administrators can force close tickets.',
-
-      ephemeral: true,
-
-    });
-  }
-
-
-  const meta =
-    parseTopic(
-      interaction.channel?.topic
-    );
-
-
-  if (!meta) {
-
-    return interaction.reply({
-
-      content:
-        'This does not look like a ticket channel.',
-
-      ephemeral: true,
-
-    });
-  }
-
-
-  pendingTicketClosures.set(
-    interaction.channel.id,
-    {
-      reason:
-        'Force closed by administrator',
-
-      closerId:
-        interaction.user.id,
-
-      requestedAt:
-        Date.now(),
-
-      force:
-        true,
-    }
-  );
-
-
-  return finalizeCloseTicket(
-    interaction
-  );
-}
-
 /* =========================================================
    FORCE CLOSE TICKET
 ========================================================= */
@@ -2770,7 +2702,6 @@ async function forceCloseTicket(interaction) {
     });
   }
 
-  // ADMIN ONLY
   const isAdmin =
     interaction.memberPermissions?.has(
       PermissionsBitField.Flags.Administrator
@@ -2787,40 +2718,116 @@ async function forceCloseTicket(interaction) {
     });
   }
 
-  console.log(
-    `[FORCECLOSE] ${interaction.user.tag} force closing ${interaction.channel.name}`
-  );
+  const closerId = interaction.user.id;
 
-  // Force close immediately — no ticket-owner confirmation.
-  return finalizeCloseTicket(interaction);
+  await interaction.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle('🔒 Ticket Force Closed')
+        .setDescription(
+          `This ticket was force closed by ${interaction.user}.\n\n` +
+          `No ticket-owner confirmation was required.`
+        )
+        .setColor('#ED4245')
+        .setTimestamp(),
+    ],
+    components: [],
+  });
+
+  incrementStat(
+    interaction.guild,
+    closerId,
+    'ticketsClosed'
+  ).catch((err) => {
+    console.error(
+      'Failed to update staff tracker for force close:',
+      err
+    );
+  });
+
+  try {
+    const attachment =
+      await buildTranscript(interaction.channel);
+
+    const logChannelId =
+      config.transcriptLogChannelId;
+
+    if (
+      logChannelId &&
+      !logChannelId.startsWith('PUT_')
+    ) {
+      const logChannel =
+        await interaction.guild.channels
+          .fetch(logChannelId)
+          .catch(() => null);
+
+      if (
+        logChannel &&
+        logChannel.isTextBased()
+      ) {
+        const logEmbed =
+          new EmbedBuilder()
+            .setTitle('Ticket Force Closed')
+            .addFields(
+              {
+                name: 'Channel',
+                value:
+                  `#${interaction.channel.name}`,
+                inline: true,
+              },
+              {
+                name: 'Opened by',
+                value:
+                  `<@${meta.userId}>`,
+                inline: true,
+              },
+              {
+                name: 'Force closed by',
+                value:
+                  `${interaction.user}`,
+                inline: true,
+              },
+              {
+                name: 'Category',
+                value:
+                  meta.categoryId,
+                inline: true,
+              }
+            )
+            .setColor('#ED4245')
+            .setTimestamp();
+
+        await logChannel.send({
+          embeds: [logEmbed],
+          files: [attachment],
+        });
+      }
+    }
+  } catch (err) {
+    console.error(
+      'Failed to build/send force-close transcript:',
+      err
+    );
+  }
+
+  setTimeout(() => {
+    interaction.channel.delete().catch(() => {});
+  }, (config.closeCountdownSeconds || 5) * 1000);
 }
-
 /* =========================================================
    EXPORTS
 ========================================================= */
 
 module.exports = {
-
   createTicket,
-
   createApplicationTicket,
-
   claimTicket,
-
   closeTicket,
-
   finalizeCloseTicket,
-
   cancelCloseTicket,
-
   forceCloseTicket,
-
   parseTopic,
-
   buildTicketControlRow,
-
   findCategory,
-
   isServiceTicket,
-
 };
