@@ -2702,47 +2702,31 @@ async function forceCloseTicket(interaction) {
     });
   }
 
-  const isAdmin =
-    interaction.memberPermissions?.has(
-      PermissionsBitField.Flags.Administrator
-    ) ||
-    interaction.member?.permissions?.has(
-      PermissionsBitField.Flags.Administrator
-    );
+  // Check for the configured MOD role
+  const isMod = (config.modRoleIds || []).some(
+    (roleId) =>
+      roleId &&
+      interaction.member?.roles?.cache?.has(roleId)
+  );
 
-  if (!isAdmin) {
+  if (!isMod) {
     return interaction.reply({
-      content:
-        '❌ You need **Administrator** permission to use `/forceclose`.',
+      content: '❌ You need the **Mod** role to use `/forceclose`.',
       ephemeral: true,
     });
   }
-
-  const closerId = interaction.user.id;
 
   await interaction.reply({
     embeds: [
       new EmbedBuilder()
         .setTitle('🔒 Ticket Force Closed')
         .setDescription(
-          `This ticket was force closed by ${interaction.user}.\n\n` +
-          `No ticket-owner confirmation was required.`
+          `This ticket was force closed by ${interaction.user}.`
         )
         .setColor('#ED4245')
         .setTimestamp(),
     ],
     components: [],
-  });
-
-  incrementStat(
-    interaction.guild,
-    closerId,
-    'ticketsClosed'
-  ).catch((err) => {
-    console.error(
-      'Failed to update staff tracker for force close:',
-      err
-    );
   });
 
   try {
@@ -2771,26 +2755,22 @@ async function forceCloseTicket(interaction) {
             .addFields(
               {
                 name: 'Channel',
-                value:
-                  `#${interaction.channel.name}`,
+                value: `#${interaction.channel.name}`,
                 inline: true,
               },
               {
                 name: 'Opened by',
-                value:
-                  `<@${meta.userId}>`,
+                value: `<@${meta.userId}>`,
                 inline: true,
               },
               {
                 name: 'Force closed by',
-                value:
-                  `${interaction.user}`,
+                value: `${interaction.user}`,
                 inline: true,
               },
               {
                 name: 'Category',
-                value:
-                  meta.categoryId,
+                value: meta.categoryId,
                 inline: true,
               }
             )
