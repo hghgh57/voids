@@ -308,11 +308,11 @@ function isGiveawayClaimTicket(
 
 
 function getGiveawayChannelIds() {
-
-  const configured =
-    config.giveawayChannelIds ||
-    config.giveawayChannels ||
-    [];
+const ids =
+  config.giveawayCheckChannelIds ||
+  config.giveawayChannelIds ||
+  config.giveawayChannels ||
+  [];
 
   if (
     !Array.isArray(
