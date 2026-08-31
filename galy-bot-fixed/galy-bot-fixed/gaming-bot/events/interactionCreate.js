@@ -5,6 +5,8 @@ const {
   ActionRowBuilder,
   StringSelectMenuBuilder,
   EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
 } = require('discord.js');
 
 const {
@@ -52,6 +54,31 @@ const {
 
 function isSupport(member) {
   const roleIds = config.supportRoleIds || [];
+
+  return roleIds.some(
+    (id) =>
+      id &&
+      !id.startsWith('PUT_') &&
+      member.roles.cache.has(id)
+  );
+}
+
+
+/* =========================================================
+   SCAMMER STAFF CHECK
+========================================================= */
+
+function canHandleScammerReport(member) {
+  if (!member) return false;
+
+  if (member.permissions?.has('Administrator')) {
+    return true;
+  }
+
+  const roleIds = [
+    ...(config.supportRoleIds || []),
+    ...(config.adminRoleIds || []),
+  ];
 
   return roleIds.some(
     (id) =>
@@ -361,24 +388,12 @@ module.exports = {
         }
 
 
-        /* =================================================
-           DETERMINE WHICH PANEL WAS USED
-        ================================================= */
-
         const isServicePanel =
           interaction.customId ===
             'service_ticket_category_select' ||
           interaction.customId ===
             'service_ticket_select';
 
-
-        /* =================================================
-           RESET PANEL IMMEDIATELY
-           
-           This is important because Discord select menus
-           visually keep the selected value until the
-           original message is edited.
-        ================================================= */
 
         if (isServicePanel) {
 
@@ -394,10 +409,6 @@ module.exports = {
         }
 
 
-        /* =================================================
-           CATEGORY HAS QUESTIONS
-        ================================================= */
-
         if (
           Array.isArray(category.questions) &&
           category.questions.length > 0
@@ -410,10 +421,6 @@ module.exports = {
           return;
         }
 
-
-        /* =================================================
-           CATEGORY HAS NO QUESTIONS
-        ================================================= */
 
         await createTicket(
           interaction,
@@ -499,6 +506,167 @@ module.exports = {
 
 
       /* =====================================================
+         SCAMMER REPORT MODAL
+      ===================================================== */
+
+      if (
+        interaction.isModalSubmit() &&
+        interaction.customId.startsWith(
+          'scammer_report_modal_'
+        )
+      ) {
+
+        const reportedUserId =
+          interaction.customId.replace(
+            'scammer_report_modal_',
+            ''
+          );
+
+        const details =
+          interaction.fields.getTextInputValue(
+            'scammer_details'
+          );
+
+        const proof =
+          interaction.fields.getTextInputValue(
+            'scammer_proof'
+          ) || '';
+
+        if (!reportedUserId || !details) {
+
+          return interaction.reply({
+            content:
+              '❌ Your scammer report is missing information.',
+            ephemeral: true,
+          });
+        }
+
+
+        const reportChannelId =
+          config.scammerReportChannelId;
+
+        if (
+          !reportChannelId ||
+          reportChannelId === 'YOUR_CHANNEL_ID' ||
+          reportChannelId.startsWith('PUT_')
+        ) {
+
+          console.error(
+            'scammerReportChannelId is not configured.'
+          );
+
+          return interaction.reply({
+            content:
+              '❌ The scammer report system has not been configured yet.',
+            ephemeral: true,
+          });
+        }
+
+
+        const reportChannel =
+          await interaction.client.channels
+            .fetch(reportChannelId)
+            .catch(() => null);
+
+        if (!reportChannel) {
+
+          return interaction.reply({
+            content:
+              '❌ I could not find the scammer report channel.',
+            ephemeral: true,
+          });
+        }
+
+
+        const reportedUser =
+          await interaction.client.users
+            .fetch(reportedUserId)
+            .catch(() => null);
+
+
+        const reportEmbed =
+          new EmbedBuilder()
+            .setTitle('🚨 Scammer Report')
+            .setColor('#ED4245')
+            .addFields(
+              {
+                name: 'Reported User',
+                value: reportedUser
+                  ? `${reportedUser} (${reportedUser.tag})\nID: ${reportedUser.id}`
+                  : `<@${reportedUserId}>\nID: ${reportedUserId}`,
+              },
+              {
+                name: 'Reported By',
+                value:
+                  `${interaction.user} (${interaction.user.tag})\nID: ${interaction.user.id}`,
+              },
+              {
+                name: 'What Happened',
+                value:
+                  details.slice(0, 1024),
+              },
+              {
+                name: 'Proof',
+                value:
+                  proof
+                    ? proof.slice(0, 1024)
+                    : 'No proof was provided.',
+              },
+              {
+                name: 'Status',
+                value: '🟡 Awaiting staff review',
+              }
+            )
+            .setTimestamp()
+            .setFooter({
+              text:
+                `Report ID: ${interaction.id}`,
+            });
+
+
+        const buttons =
+          new ActionRowBuilder().addComponents(
+
+            new ButtonBuilder()
+              .setCustomId(
+                `scammer_accept_${reportedUserId}_${interaction.user.id}`
+              )
+              .setLabel('Accept — Scammer')
+              .setEmoji('🔴')
+              .setStyle(ButtonStyle.Danger),
+
+            new ButtonBuilder()
+              .setCustomId(
+                `scammer_deny_${reportedUserId}_${interaction.user.id}`
+              )
+              .setLabel('Deny — Not a Scammer')
+              .setEmoji('🟢')
+              .setStyle(ButtonStyle.Success)
+
+          );
+
+
+        await reportChannel.send({
+          embeds: [
+            reportEmbed,
+          ],
+          components: [
+            buttons,
+          ],
+        });
+
+
+        await interaction.reply({
+          content:
+            '✅ Your scammer report has been sent to staff for review.',
+          ephemeral: true,
+        });
+
+        return;
+      }
+
+
+      /* =====================================================
          STAFF TRACKER SELECT
       ===================================================== */
 
@@ -577,10 +745,6 @@ module.exports = {
               String(appId)
           );
 
-        /* =================================================
-           INVALID APPLICATION
-        ================================================= */
-
         if (!appConfig) {
 
           await resetApplicationDropdown(
@@ -594,10 +758,6 @@ module.exports = {
           });
         }
 
-
-        /* =================================================
-           CHECK PENDING APPLICATION
-        ================================================= */
 
         if (
           hasApplied(
@@ -618,22 +778,10 @@ module.exports = {
         }
 
 
-        /* =================================================
-           RESET APPLICATION PANEL
-           
-           This happens BEFORE attempting the DM.
-           Therefore the dropdown never gets stuck on the
-           user's previous selection.
-        ================================================= */
-
         await resetApplicationDropdown(
           interaction.message
         );
 
-
-        /* =================================================
-           SEND APPLICATION TO DMS
-        ================================================= */
 
         const started =
           await startDmApplication(
@@ -644,10 +792,6 @@ module.exports = {
           );
 
 
-        /* =================================================
-           DM FAILED
-        ================================================= */
-
         if (!started) {
 
           return interaction.reply({
@@ -657,10 +801,6 @@ module.exports = {
           });
         }
 
-
-        /* =================================================
-           DM SENT
-        ================================================= */
 
         return interaction.reply({
           content:
@@ -677,28 +817,215 @@ module.exports = {
       if (interaction.isButton()) {
 
         /* =================================================
-           SERVICE TICKET BUTTONS
-           The /service-tickets command uses buttons with:
-           service_ticket_open_<serviceId>
+           SCAMMER ACCEPT / DENY
         ================================================= */
 
-        if (interaction.customId.startsWith('service_ticket_open_')) {
-          const categoryId = interaction.customId.replace('service_ticket_open_', '');
-          const category = findTicketCategory(categoryId);
+        if (
+          interaction.customId.startsWith(
+            'scammer_accept_'
+          ) ||
+          interaction.customId.startsWith(
+            'scammer_deny_'
+          )
+        ) {
 
-          if (!category || !(config.serviceCategories || []).some((c) => c.id === categoryId)) {
+          const isAccept =
+            interaction.customId.startsWith(
+              'scammer_accept_'
+            );
+
+          const prefix =
+            isAccept
+              ? 'scammer_accept_'
+              : 'scammer_deny_';
+
+          const rest =
+            interaction.customId.replace(
+              prefix,
+              ''
+            );
+
+          const parts =
+            rest.split('_');
+
+          const reportedUserId =
+            parts[0];
+
+          const reporterId =
+            parts[1];
+
+
+          /* =================================================
+             STAFF CHECK
+          ================================================= */
+
+          if (
+            !canHandleScammerReport(
+              interaction.member
+            )
+          ) {
+
             return interaction.reply({
-              content: '❌ That service could not be found.',
+              content:
+                '❌ Only staff can accept or deny scammer reports.',
               ephemeral: true,
             });
           }
 
-          if (Array.isArray(category.questions) && category.questions.length > 0) {
-            await interaction.showModal(buildQuestionsModal(category));
+
+          /* =================================================
+             ORIGINAL EMBED
+          ================================================= */
+
+          const originalEmbed =
+            interaction.message.embeds[0];
+
+          if (!originalEmbed) {
+
+            return interaction.reply({
+              content:
+                '❌ I could not find the scammer report.',
+              ephemeral: true,
+            });
+          }
+
+
+          const reportedUser =
+            await interaction.client.users
+              .fetch(reportedUserId)
+              .catch(() => null);
+
+          const status =
+            isAccept
+              ? '🔴 CONFIRMED SCAMMER'
+              : '🟢 REPORT DENIED — NOT CONFIRMED';
+
+
+          const updatedEmbed =
+            EmbedBuilder
+              .from(originalEmbed)
+              .setColor(
+                isAccept
+                  ? '#ED4245'
+                  : '#57F287'
+              )
+              .spliceFields(
+                4,
+                1,
+                {
+                  name: 'Status',
+                  value: status,
+                }
+              )
+              .setFooter({
+                text:
+                  `${
+                    isAccept
+                      ? 'Accepted'
+                      : 'Denied'
+                  } by ${interaction.user.tag}`,
+              });
+
+
+          await interaction.update({
+            embeds: [
+              updatedEmbed,
+            ],
+            components: [],
+          });
+
+
+          /* =================================================
+             DM REPORTER
+          ================================================= */
+
+          if (reporterId) {
+
+            const reporter =
+              await interaction.client.users
+                .fetch(reporterId)
+                .catch(() => null);
+
+            if (reporter) {
+
+              await reporter
+                .send(
+                  isAccept
+                    ? `🔴 Your scammer report for **${
+                        reportedUser
+                          ? reportedUser.tag
+                          : `<@${reportedUserId}>`
+                      }** has been **accepted** by staff.`
+                    : `🟢 Your scammer report for **${
+                        reportedUser
+                          ? reportedUser.tag
+                          : `<@${reportedUserId}>`
+                      }** has been **denied** by staff.`
+                )
+                .catch(() => {});
+            }
+          }
+
+          return;
+        }
+
+
+        /* =================================================
+           SERVICE TICKET BUTTONS
+        ================================================= */
+
+        if (
+          interaction.customId.startsWith(
+            'service_ticket_open_'
+          )
+        ) {
+
+          const categoryId =
+            interaction.customId.replace(
+              'service_ticket_open_',
+              ''
+            );
+
+          const category =
+            findTicketCategory(
+              categoryId
+            );
+
+          if (
+            !category ||
+            !(config.serviceCategories || [])
+              .some(
+                (c) =>
+                  c.id === categoryId
+              )
+          ) {
+
+            return interaction.reply({
+              content:
+                '❌ That service could not be found.',
+              ephemeral: true,
+            });
+          }
+
+          if (
+            Array.isArray(
+              category.questions
+            ) &&
+            category.questions.length > 0
+          ) {
+
+            await interaction.showModal(
+              buildQuestionsModal(category)
+            );
+
             return;
           }
 
-          await createTicket(interaction, categoryId);
+          await createTicket(
+            interaction,
+            categoryId
+          );
+
           return;
         }
 
@@ -1300,15 +1627,6 @@ module.exports = {
               ''
             );
 
-          /*
-            Format:
-
-            app_accept_USERID_APPID
-            app_deny_USERID_APPID
-
-            Split only at the FIRST underscore.
-          */
-
           const separator =
             rest.indexOf('_');
 
@@ -1335,10 +1653,6 @@ module.exports = {
             );
 
 
-          /* =================================================
-             STAFF CHECK
-          ================================================= */
-
           if (
             !interaction.member ||
             !isSupport(
@@ -1353,10 +1667,6 @@ module.exports = {
             });
           }
 
-
-          /* =================================================
-             APPLICATION CONFIG
-          ================================================= */
 
           const appConfig =
             (
@@ -1374,10 +1684,6 @@ module.exports = {
               : 'Application';
 
 
-          /* =================================================
-             GET ORIGINAL EMBED
-          ================================================= */
-
           const originalEmbed =
             interaction.message
               .embeds[0];
@@ -1391,10 +1697,6 @@ module.exports = {
             });
           }
 
-
-          /* =================================================
-             UPDATE APPLICATION
-          ================================================= */
 
           const updatedEmbed =
             EmbedBuilder
@@ -1431,19 +1733,11 @@ module.exports = {
           });
 
 
-          /* =================================================
-             CLEAR PENDING APPLICATION
-          ================================================= */
-
           clearApplied(
             applicantId,
             appId
           );
 
-
-          /* =================================================
-             DM APPLICANT
-          ================================================= */
 
           const applicant =
             await interaction.client.users
