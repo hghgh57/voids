@@ -4,6 +4,7 @@ const {
   ActionRowBuilder,
   StringSelectMenuBuilder,
 } = require('discord.js');
+
 const config = require('../config.json');
 const { isAdmin } = require('../utils/permissions');
 
@@ -14,20 +15,34 @@ module.exports = {
 
   async execute(interaction) {
     if (!isAdmin(interaction.member)) {
-      return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+      return interaction.reply({
+        content: 'You do not have permission to use this command.',
+        ephemeral: true,
+      });
     }
 
     const embed = new EmbedBuilder()
       .setDescription(config.panel.description)
       .setColor(config.panel.color || '#5865F2')
-      .setFooter({ text: config.panel.footer || '' });
+      .setFooter({
+        text: config.panel.footer || '',
+      });
 
     if (config.panel.title) {
       embed.setTitle(config.panel.title);
     }
 
+    // Add panel image from config.json
+    if (config.panel.image) {
+      embed.setImage(config.panel.image);
+    }
+
     if (config.logoUrl && !config.logoUrl.startsWith('PUT_')) {
-      embed.setAuthor({ name: config.panel.title || 'Support', iconURL: config.logoUrl });
+      embed.setAuthor({
+        name: config.panel.title || 'Support',
+        iconURL: config.logoUrl,
+      });
+
       embed.setThumbnail(config.logoUrl);
     }
 
@@ -45,7 +60,14 @@ module.exports = {
 
     const row = new ActionRowBuilder().addComponents(menu);
 
-    await interaction.channel.send({ embeds: [embed], components: [row] });
-    await interaction.reply({ content: 'Ticket panel posted.', ephemeral: true });
+    await interaction.channel.send({
+      embeds: [embed],
+      components: [row],
+    });
+
+    await interaction.reply({
+      content: 'Ticket panel posted.',
+      ephemeral: true,
+    });
   },
 };
