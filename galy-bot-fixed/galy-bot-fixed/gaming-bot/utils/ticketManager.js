@@ -94,19 +94,22 @@ function buildTicketControlRow(
 
       new ButtonBuilder()
         .setCustomId(
-          'ticket_claim'
+          claimed
+            ? 'ticket_unclaim'
+            : 'ticket_claim'
         )
         .setLabel(
           claimed
-            ? 'Claimed'
+            ? 'Unclaim'
             : 'Claim'
         )
-        .setEmoji('🙋')
+        .setEmoji(
+          claimed
+            ? '↩️'
+            : '🙋'
+        )
         .setStyle(
           ButtonStyle.Secondary
-        )
-        .setDisabled(
-          claimed
         ),
 
       new ButtonBuilder()
@@ -131,6 +134,29 @@ function buildTicketControlRow(
           ButtonStyle.Secondary
         )
     );
+}
+
+
+/* =========================================================
+   NSW DATE / TIME
+========================================================= */
+
+function getSydneyDateTime(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  }).formatToParts(date);
+
+  const get = (type) =>
+    parts.find((part) => part.type === type)?.value || '';
+
+  return `${get('day')}/${get('month')}/${get('year')} • ${get('hour')}:${get('minute')} ${get('dayPeriod')} ${get('timeZoneName')}`;
 }
 
 
@@ -306,6 +332,7 @@ function isGiveawayClaimTicket(
   );
 }
 
+
 function getGiveawayChannelIds() {
   const ids =
     config.giveawayCheckChannelIds ||
@@ -327,6 +354,7 @@ function getGiveawayChannelIds() {
     ),
   ];
 }
+
 
 function normaliseWinnerText(
   value
@@ -971,9 +999,7 @@ async function createTicket(
       ephemeral: true,
     });
   }
-
-
-  const existing =
+    const existing =
     countOpenTicketsForUser(
       guild,
       user.id
@@ -1210,6 +1236,9 @@ async function createTicket(
           config.panel?.color ||
           '#5865F2'
         )
+        .setFooter({
+          text: `Ticket ID: ${channel.id} • ${getSydneyDateTime()}`,
+        })
         .setTimestamp();
 
 
@@ -1983,9 +2012,7 @@ async function claimTicket(
     .catch(
       () => {}
     );
-
-
-  const embed =
+    const embed =
     new EmbedBuilder()
       .setTitle(
         '🙋 Ticket Claimed'
@@ -2036,6 +2063,137 @@ async function claimTicket(
       );
     }
   );
+}
+
+
+/* =========================================================
+   UNCLAIM TICKET
+========================================================= */
+
+async function unclaimTicket(
+  interaction
+) {
+  const meta =
+    parseTopic(
+      interaction.channel.topic
+    );
+
+  if (!meta) {
+    return interaction.reply({
+      content:
+        'This does not look like a ticket channel.',
+      ephemeral: true,
+    });
+  }
+
+  const member =
+    interaction.member;
+
+  let roleIds =
+    getRoleIdsForTicket(
+      meta.categoryId
+    );
+
+  if (
+    meta.categoryId.startsWith(
+      'application_'
+    )
+  ) {
+    roleIds =
+      getApplicationTicketRoleIds();
+  }
+
+  const isTicketStaff =
+    roleIds.some(
+      (roleId) =>
+        member.roles.cache.has(
+          roleId
+        )
+    );
+
+  if (
+    !isTicketStaff &&
+    !member.permissions.has(
+      PermissionsBitField.Flags.ManageChannels
+    )
+  ) {
+    return interaction.reply({
+      content:
+        'Only ticket staff can unclaim tickets.',
+      ephemeral: true,
+    });
+  }
+
+  const claimerOverwrite =
+    interaction.channel.permissionOverwrites.cache.get(
+      interaction.user.id
+    );
+
+  if (
+    !claimerOverwrite ||
+    !claimerOverwrite.allow.has(
+      PermissionsBitField.Flags.ManageMessages
+    )
+  ) {
+    return interaction.reply({
+      content:
+        'You are not the person who claimed this ticket.',
+      ephemeral: true,
+    });
+  }
+
+  for (
+    const roleId of roleIds
+  ) {
+    const role =
+      await interaction.guild.roles
+        .fetch(roleId)
+        .catch(() => null);
+
+    if (!role) {
+      continue;
+    }
+
+    await interaction.channel
+      .permissionOverwrites
+      .edit(role, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+      })
+      .catch(() => {});
+  }
+
+  await interaction.channel
+    .permissionOverwrites
+    .delete(interaction.user.id)
+    .catch(() => {});
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle('↩️ Ticket Unclaimed')
+      .setDescription(
+        `This ticket has been unclaimed by ${interaction.user}.\n\n` +
+        'Ticket staff can now see and claim this ticket again.'
+      )
+      .setColor('#5865F2')
+      .setFooter({
+        text: `Ticket ID: ${interaction.channel.id} • ${getSydneyDateTime()}`,
+      });
+
+  await interaction.reply({
+    embeds: [
+      embed,
+    ],
+  });
+
+  await interaction.message
+    .edit({
+      components: [
+        buildTicketControlRow(false),
+      ],
+    })
+    .catch(() => {});
 }
 
 
@@ -2794,6 +2952,8 @@ async function forceCloseTicket(interaction) {
     interaction.channel.delete().catch(() => {});
   }, (config.closeCountdownSeconds || 5) * 1000);
 }
+
+
 /* =========================================================
    EXPORTS
 ========================================================= */
@@ -2802,6 +2962,7 @@ module.exports = {
   createTicket,
   createApplicationTicket,
   claimTicket,
+  unclaimTicket,
   closeTicket,
   finalizeCloseTicket,
   cancelCloseTicket,
