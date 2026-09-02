@@ -138,29 +138,6 @@ function buildTicketControlRow(
 
 
 /* =========================================================
-   NSW DATE / TIME
-========================================================= */
-
-function getSydneyDateTime(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-AU', {
-    timeZone: 'Australia/Sydney',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-    timeZoneName: 'short',
-  }).formatToParts(date);
-
-  const get = (type) =>
-    parts.find((part) => part.type === type)?.value || '';
-
-  return `${get('day')}/${get('month')}/${get('year')} • ${get('hour')}:${get('minute')} ${get('dayPeriod')} ${get('timeZoneName')}`;
-}
-
-
-/* =========================================================
    ROLE HELPERS
 ========================================================= */
 
@@ -332,7 +309,6 @@ function isGiveawayClaimTicket(
   );
 }
 
-
 function getGiveawayChannelIds() {
   const ids =
     config.giveawayCheckChannelIds ||
@@ -354,7 +330,6 @@ function getGiveawayChannelIds() {
     ),
   ];
 }
-
 
 function normaliseWinnerText(
   value
@@ -999,7 +974,9 @@ async function createTicket(
       ephemeral: true,
     });
   }
-    const existing =
+
+
+  const existing =
     countOpenTicketsForUser(
       guild,
       user.id
@@ -1236,9 +1213,6 @@ async function createTicket(
           config.panel?.color ||
           '#5865F2'
         )
-        .setFooter({
-          text: `Ticket ID: ${channel.id} • ${getSydneyDateTime()}`,
-        })
         .setTimestamp();
 
 
@@ -1436,11 +1410,15 @@ async function createTicket(
     });
 
 
+    const ticketOpenedEmbed = new EmbedBuilder()
+      .setColor('#57F287')
+      .setDescription(
+        `**✅ Ticket opened**\n\n` +
+        `Head to ${channel}`
+      );
+
     await interaction.editReply({
-
-      content:
-        `✅ Your ticket has been created: ${channel}`,
-
+      embeds: [ticketOpenedEmbed],
     });
 
 
@@ -2012,7 +1990,9 @@ async function claimTicket(
     .catch(
       () => {}
     );
-    const embed =
+
+
+  const embed =
     new EmbedBuilder()
       .setTitle(
         '🙋 Ticket Claimed'
@@ -2073,6 +2053,7 @@ async function claimTicket(
 async function unclaimTicket(
   interaction
 ) {
+
   const meta =
     parseTopic(
       interaction.channel.topic
@@ -2103,150 +2084,166 @@ async function unclaimTicket(
       getApplicationTicketRoleIds();
   }
 
-  const isTicketStaff =
-    roleIds.some(
-      (roleId) =>
-        member.roles.cache.has(
-          roleId
-        )
-    );
-
-  if (
-    !isTicketStaff &&
-    !member.permissions.has(
-      PermissionsBitField.Flags.ManageChannels
-    )
-  ) {
-    return interaction.reply({
-      content:
-        'Only ticket staff can unclaim tickets.',
-      ephemeral: true,
-    });
-  }
-
+  /*
+   * The claimer is identified by the user overwrite
+   * that has ManageMessages enabled. This prevents a
+   * different staff member from unclaiming the ticket.
+   */
   const claimerOverwrite =
     interaction.channel.permissionOverwrites.cache.get(
       interaction.user.id
     );
 
-  if (
-    !claimerOverwrite ||
-    !claimerOverwrite.allow.has(
+  const isClaimer =
+    claimerOverwrite?.allow.has(
       PermissionsBitField.Flags.ManageMessages
-    )
-  ) {
+    );
+
+  if (!isClaimer) {
     return interaction.reply({
       content:
-        'You are not the person who claimed this ticket.',
+        '❌ Only the staff member who claimed this ticket can unclaim it.',
       ephemeral: true,
     });
   }
 
-  // Acknowledge the button BEFORE doing any Discord API work.
-  // This prevents Discord's 3-second interaction timeout.
+  /*
+   * Acknowledge immediately so Discord does not show
+   * "This interaction failed" if permission edits take
+   * more than three seconds.
+   */
   await interaction.deferUpdate();
 
-  try {
-    // Restore the normal ticket-staff permissions.
-    for (
-      const roleId of roleIds
-    ) {
-      const role =
-        await interaction.guild.roles
-          .fetch(roleId)
-          .catch(() => null);
+  /*
+   * Restore the ticket staff roles to their normal
+   * ticket permissions.
+   */
+  for (
+    const roleId of roleIds
+  ) {
 
-      if (!role) {
-        continue;
-      }
+    const role =
+      await interaction.guild.roles
+        .fetch(roleId)
+        .catch(
+          () => null
+        );
 
-      await interaction.channel
-        .permissionOverwrites
-        .edit(role, {
+    if (!role) {
+      continue;
+    }
+
+    await interaction.channel
+      .permissionOverwrites
+      .edit(
+        role,
+        {
           ViewChannel: true,
           SendMessages: true,
           ReadMessageHistory: true,
           ManageMessages: true,
           AttachFiles: true,
           EmbedLinks: true,
-        });
-    }
+        }
+      )
+      .catch(
+        (err) => {
+          console.error(
+            `Failed to restore ticket role ${roleId}:`,
+            err
+          );
+        }
+      );
+  }
 
-    // If the opener claimed their own ticket, keep their access.
-    // Otherwise remove only the claimer's temporary overwrite.
-    if (
-      interaction.user.id ===
-      meta.userId
-    ) {
-      await interaction.channel
-        .permissionOverwrites
-        .edit(
-          meta.userId,
-          {
-            ViewChannel: true,
-            SendMessages: true,
-            ReadMessageHistory: true,
-            AttachFiles: true,
-            EmbedLinks: true,
-            ManageMessages: false,
-          }
-        );
-    } else {
-      await interaction.channel
-        .permissionOverwrites
-        .delete(
-          interaction.user.id
-        )
-        .catch(() => {});
-    }
+  /*
+   * Keep the ticket opener's access.
+   * If the opener is also the person who claimed the
+   * ticket, do NOT delete their overwrite because that
+   * would remove their access completely.
+   */
+  if (
+    interaction.user.id ===
+    meta.userId
+  ) {
 
-    const embed =
-      new EmbedBuilder()
-        .setTitle(
-          '↩️ Ticket Unclaimed'
-        )
-        .setDescription(
-          `This ticket has been unclaimed by ${interaction.user}.\n\n` +
-          'Ticket staff can now see and claim this ticket again.'
-        )
-        .setColor(
-          '#5865F2'
-        )
-        .setFooter({
-          text: `Ticket ID: ${interaction.channel.id} • ${getSydneyDateTime()}`,
-        });
+    await interaction.channel
+      .permissionOverwrites
+      .edit(
+        meta.userId,
+        {
+          ViewChannel: true,
+          SendMessages: true,
+          ReadMessageHistory: true,
+          AttachFiles: true,
+          EmbedLinks: true,
+          ManageMessages: false,
+        }
+      )
+      .catch(
+        (err) => {
+          console.error(
+            'Failed to restore ticket opener permissions:',
+            err
+          );
+        }
+      );
 
-    await interaction.message
-      .edit({
-        embeds: [
-          ...interaction.message.embeds,
-          embed,
-        ],
-        components: [
-          buildTicketControlRow(
-            false
-          ),
-        ],
-      });
+  } else {
 
-  } catch (err) {
-    console.error(
-      '[TICKET UNCLAIM] Failed to unclaim ticket:',
-      err
+    await interaction.channel
+      .permissionOverwrites
+      .delete(
+        interaction.user.id
+      )
+      .catch(
+        (err) => {
+          console.error(
+            'Failed to remove claimer permissions:',
+            err
+          );
+        }
+      );
+  }
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        '↩️ Ticket Unclaimed'
+      )
+      .setDescription(
+        `This ticket has been unclaimed by ${interaction.user}.\n\n` +
+        'Ticket staff can see and handle this ticket again.'
+      )
+      .setColor(
+        '#5865F2'
+      );
+
+  const claimRow =
+    buildTicketControlRow(
+      false
     );
 
-    // The interaction was already acknowledged, so edit the original
-    // message instead of trying to reply again.
-    await interaction.message
-      .edit({
-        components: [
-          buildTicketControlRow(
-            false
-          ),
-        ],
-      })
-      .catch(() => {});
-  }
+  await interaction.message
+    .edit({
+      embeds: [
+        ...interaction.message.embeds,
+        embed,
+      ],
+      components: [
+        claimRow,
+      ],
+    })
+    .catch(
+      (err) => {
+        console.error(
+          'Failed to update unclaimed ticket message:',
+          err
+        );
+      }
+    );
+
+  return;
 }
 
 
@@ -2272,12 +2269,9 @@ async function closeTicket(
   if (!meta) {
 
     return interaction.reply({
-
       content:
         'This does not look like a ticket channel.',
-
       ephemeral: true,
-
     });
   }
 
@@ -2297,7 +2291,6 @@ async function closeTicket(
       'application_'
     )
   ) {
-
     roleIds =
       getApplicationTicketRoleIds();
   }
@@ -2324,14 +2317,10 @@ async function closeTicket(
       PermissionsBitField.Flags.ManageChannels
     )
   ) {
-
     return interaction.reply({
-
       content:
         'You do not have permission to close this ticket.',
-
       ephemeral: true,
-
     });
   }
 
@@ -2341,14 +2330,10 @@ async function closeTicket(
       interaction.channel.id
     )
   ) {
-
     return interaction.reply({
-
       content:
-        'This ticket is already waiting for the ticket owner to confirm closure.',
-
+        'This ticket is already closing.',
       ephemeral: true,
-
     });
   }
 
@@ -2358,96 +2343,18 @@ async function closeTicket(
     {
       reason:
         reason || null,
-
       closerId:
         interaction.user.id,
-
       requestedAt:
         Date.now(),
     }
   );
 
 
-  const confirmationEmbed =
-    new EmbedBuilder()
-      .setTitle(
-        '🔒 Ticket Closure Requested'
-      )
-      .setDescription(
-        `This ticket was marked for closure by ${interaction.user}.\n\n` +
-        `<@${meta.userId}>, **has your issue been solved and would you like to close this ticket?**\n\n` +
-        'Please choose **Yes, close it** or **No, keep it open** below.'
-      )
-      .setColor(
-        '#FEE75C'
-      )
-      .setFooter({
-        text:
-          'Only the person who opened this ticket can confirm the closure.',
-      });
-
-
-  const row =
-    new ActionRowBuilder()
-      .addComponents(
-
-        new ButtonBuilder()
-          .setCustomId(
-            'ticket_close_confirm'
-          )
-          .setLabel(
-            'Yes, close it'
-          )
-          .setEmoji('✅')
-          .setStyle(
-            ButtonStyle.Success
-          ),
-
-        new ButtonBuilder()
-          .setCustomId(
-            'ticket_close_cancel'
-          )
-          .setLabel(
-            'No, keep it open'
-          )
-          .setEmoji('❌')
-          .setStyle(
-            ButtonStyle.Secondary
-          )
-      );
-
-
-  if (
-    interaction.deferred ||
-    interaction.replied
-  ) {
-
-    await interaction.editReply({
-
-      embeds: [
-        confirmationEmbed,
-      ],
-
-      components: [
-        row,
-      ],
-
-    });
-
-  } else {
-
-    await interaction.reply({
-
-      embeds: [
-        confirmationEmbed,
-      ],
-
-      components: [
-        row,
-      ],
-
-    });
-  }
+  // Close immediately. There is no confirmation step.
+  return finalizeCloseTicket(
+    interaction
+  );
 }
 
 
@@ -2471,22 +2378,6 @@ async function finalizeCloseTicket(
 
       content:
         'This does not look like a ticket channel.',
-
-      ephemeral: true,
-
-    });
-  }
-
-
-  if (
-    interaction.user.id !==
-    meta.userId
-  ) {
-
-    return interaction.reply({
-
-      content:
-        'Only the person who opened this ticket can confirm the closure.',
 
       ephemeral: true,
 
@@ -2518,42 +2409,59 @@ async function finalizeCloseTicket(
   );
 
 
-  await interaction.update({
-
-    embeds: [
-
-      new EmbedBuilder()
-
-        .setTitle(
-          '🔒 Ticket Closing'
+  const closingEmbed =
+    new EmbedBuilder()
+      .setTitle(
+        '🔒 Closing ticket'
+      )
+      .setDescription(
+        `Closing ticket, generating transcript...\n\nClosed by ${interaction.user}.` +
+        (
+          pending.reason
+            ? `\n**Reason:** ${pending.reason}`
+            : ''
         )
+      )
+      .setColor(
+        '#ED4245'
+      )
+      .setFooter({
+        text:
+          `This channel will be deleted in ${
+            config.closeCountdownSeconds ||
+            5
+          } seconds.`,
+      });
 
-        .setDescription(
-          `The ticket owner confirmed that the issue has been solved.\n\nClosed by ${interaction.user}.` +
-          (
-            pending.reason
-              ? `\n**Reason:** ${pending.reason}`
-              : ''
-          )
-        )
 
-        .setColor(
-          '#ED4245'
-        )
-
-        .setFooter({
-          text:
-            `This channel will be deleted in ${
-              config.closeCountdownSeconds ||
-              5
-            } seconds.`,
-        }),
-
-    ],
-
-    components: [],
-
-  });
+  if (
+    typeof interaction.isButton === 'function' &&
+    interaction.isButton()
+  ) {
+    await interaction.update({
+      embeds: [
+        closingEmbed,
+      ],
+      components: [],
+    });
+  } else if (
+    interaction.deferred ||
+    interaction.replied
+  ) {
+    await interaction.editReply({
+      embeds: [
+        closingEmbed,
+      ],
+      components: [],
+    });
+  } else {
+    await interaction.reply({
+      embeds: [
+        closingEmbed,
+      ],
+      components: [],
+    });
+  }
 
 
   const closerId =
@@ -2678,16 +2586,6 @@ async function finalizeCloseTicket(
                   true,
               },
 
-              {
-                name:
-                  'Confirmed by',
-
-                value:
-                  `${interaction.user}`,
-
-                inline:
-                  true,
-              },
 
               {
                 name:
@@ -3005,8 +2903,6 @@ async function forceCloseTicket(interaction) {
     interaction.channel.delete().catch(() => {});
   }, (config.closeCountdownSeconds || 5) * 1000);
 }
-
-
 /* =========================================================
    EXPORTS
 ========================================================= */
