@@ -377,10 +377,6 @@ module.exports = {
 
         /* =================================================
            RESET PANEL IMMEDIATELY
-
-           This is important because Discord select menus
-           visually keep the selected value until the
-           original message is edited.
         ================================================= */
 
         if (isServicePanel) {
@@ -624,10 +620,6 @@ module.exports = {
 
         /* =================================================
            RESET APPLICATION PANEL
-
-           This happens BEFORE attempting the DM.
-           Therefore the dropdown never gets stuck on the
-           user's previous selection.
         ================================================= */
 
         await resetApplicationDropdown(
@@ -682,9 +674,6 @@ module.exports = {
 
         /* =================================================
            SERVICE TICKET BUTTONS
-
-           The /service-tickets command uses buttons with:
-           service_ticket_open_<serviceId>
         ================================================= */
 
         if (
@@ -739,9 +728,7 @@ module.exports = {
 
           return;
         }
-
-
-        /* =================================================
+                /* =================================================
            DM APPLICATION START
         ================================================= */
 
@@ -990,7 +977,9 @@ module.exports = {
 
           return;
         }
-                /* =================================================
+
+
+        /* =================================================
            GIVEAWAY JOIN
         ================================================= */
 
@@ -1329,9 +1318,7 @@ module.exports = {
 
           return;
         }
-
-
-        /* =================================================
+                /* =================================================
            APPLICATION ACCEPT / DENY
         ================================================= */
 
@@ -1742,7 +1729,8 @@ module.exports = {
 
         return;
       }
-            }
+    }
+
     } catch (err) {
 
       console.error(
