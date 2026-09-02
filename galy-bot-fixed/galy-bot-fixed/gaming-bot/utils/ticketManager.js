@@ -138,29 +138,6 @@ function buildTicketControlRow(
 
 
 /* =========================================================
-   NSW DATE / TIME
-========================================================= */
-
-function getSydneyDateTime(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-AU', {
-    timeZone: 'Australia/Sydney',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-    timeZoneName: 'short',
-  }).formatToParts(date);
-
-  const get = (type) =>
-    parts.find((part) => part.type === type)?.value || '';
-
-  return `${get('day')}/${get('month')}/${get('year')} • ${get('hour')}:${get('minute')} ${get('dayPeriod')} ${get('timeZoneName')}`;
-}
-
-
-/* =========================================================
    ROLE HELPERS
 ========================================================= */
 
@@ -332,7 +309,6 @@ function isGiveawayClaimTicket(
   );
 }
 
-
 function getGiveawayChannelIds() {
   const ids =
     config.giveawayCheckChannelIds ||
@@ -354,7 +330,6 @@ function getGiveawayChannelIds() {
     ),
   ];
 }
-
 
 function normaliseWinnerText(
   value
@@ -999,7 +974,9 @@ async function createTicket(
       ephemeral: true,
     });
   }
-    const existing =
+
+
+  const existing =
     countOpenTicketsForUser(
       guild,
       user.id
@@ -1236,9 +1213,6 @@ async function createTicket(
           config.panel?.color ||
           '#5865F2'
         )
-        .setFooter({
-          text: `Ticket ID: ${channel.id} • ${getSydneyDateTime()}`,
-        })
         .setTimestamp();
 
 
@@ -2012,7 +1986,9 @@ async function claimTicket(
     .catch(
       () => {}
     );
-    const embed =
+
+
+  const embed =
     new EmbedBuilder()
       .setTitle(
         '🙋 Ticket Claimed'
@@ -2073,6 +2049,7 @@ async function claimTicket(
 async function unclaimTicket(
   interaction
 ) {
+
   const meta =
     parseTopic(
       interaction.channel.topic
@@ -2103,52 +2080,50 @@ async function unclaimTicket(
       getApplicationTicketRoleIds();
   }
 
-  const isTicketStaff =
-    roleIds.some(
-      (roleId) =>
-        member.roles.cache.has(
-          roleId
-        )
-    );
-
-  if (
-    !isTicketStaff &&
-    !member.permissions.has(
-      PermissionsBitField.Flags.ManageChannels
-    )
-  ) {
-    return interaction.reply({
-      content:
-        'Only ticket staff can unclaim tickets.',
-      ephemeral: true,
-    });
-  }
-
+  /*
+   * The claimer is identified by the user overwrite
+   * that has ManageMessages enabled. This prevents a
+   * different staff member from unclaiming the ticket.
+   */
   const claimerOverwrite =
     interaction.channel.permissionOverwrites.cache.get(
       interaction.user.id
     );
 
-  if (
-    !claimerOverwrite ||
-    !claimerOverwrite.allow.has(
+  const isClaimer =
+    claimerOverwrite?.allow.has(
       PermissionsBitField.Flags.ManageMessages
-    )
-  ) {
+    );
+
+  if (!isClaimer) {
     return interaction.reply({
       content:
-        'You are not the person who claimed this ticket.',
+        '❌ Only the staff member who claimed this ticket can unclaim it.',
       ephemeral: true,
     });
   }
 
+  /*
+   * Acknowledge immediately so Discord does not show
+   * "This interaction failed" if permission edits take
+   * more than three seconds.
+   */
+  await interaction.deferUpdate();
+
+  /*
+   * Restore the ticket staff roles to their normal
+   * ticket permissions.
+   */
   for (
     const roleId of roleIds
   ) {
+
     const role =
       await interaction.guild.roles
         .fetch(roleId)
-        .catch(() => null);
+        .catch(
+          () => null
+        );
 
     if (!role) {
       continue;
@@ -2156,44 +2131,115 @@ async function unclaimTicket(
 
     await interaction.channel
       .permissionOverwrites
-      .edit(role, {
-        ViewChannel: true,
-        SendMessages: true,
-        ReadMessageHistory: true,
-      })
-      .catch(() => {});
+      .edit(
+        role,
+        {
+          ViewChannel: true,
+          SendMessages: true,
+          ReadMessageHistory: true,
+          ManageMessages: true,
+          AttachFiles: true,
+          EmbedLinks: true,
+        }
+      )
+      .catch(
+        (err) => {
+          console.error(
+            `Failed to restore ticket role ${roleId}:`,
+            err
+          );
+        }
+      );
   }
 
-  await interaction.channel
-    .permissionOverwrites
-    .delete(interaction.user.id)
-    .catch(() => {});
+  /*
+   * Keep the ticket opener's access.
+   * If the opener is also the person who claimed the
+   * ticket, do NOT delete their overwrite because that
+   * would remove their access completely.
+   */
+  if (
+    interaction.user.id ===
+    meta.userId
+  ) {
+
+    await interaction.channel
+      .permissionOverwrites
+      .edit(
+        meta.userId,
+        {
+          ViewChannel: true,
+          SendMessages: true,
+          ReadMessageHistory: true,
+          AttachFiles: true,
+          EmbedLinks: true,
+          ManageMessages: false,
+        }
+      )
+      .catch(
+        (err) => {
+          console.error(
+            'Failed to restore ticket opener permissions:',
+            err
+          );
+        }
+      );
+
+  } else {
+
+    await interaction.channel
+      .permissionOverwrites
+      .delete(
+        interaction.user.id
+      )
+      .catch(
+        (err) => {
+          console.error(
+            'Failed to remove claimer permissions:',
+            err
+          );
+        }
+      );
+  }
 
   const embed =
     new EmbedBuilder()
-      .setTitle('↩️ Ticket Unclaimed')
+      .setTitle(
+        '↩️ Ticket Unclaimed'
+      )
       .setDescription(
         `This ticket has been unclaimed by ${interaction.user}.\n\n` +
-        'Ticket staff can now see and claim this ticket again.'
+        'Ticket staff can see and handle this ticket again.'
       )
-      .setColor('#5865F2')
-      .setFooter({
-        text: `Ticket ID: ${interaction.channel.id} • ${getSydneyDateTime()}`,
-      });
+      .setColor(
+        '#5865F2'
+      );
 
-  await interaction.reply({
-    embeds: [
-      embed,
-    ],
-  });
+  const claimRow =
+    buildTicketControlRow(
+      false
+    );
 
   await interaction.message
     .edit({
+      embeds: [
+        ...interaction.message.embeds,
+        embed,
+      ],
       components: [
-        buildTicketControlRow(false),
+        claimRow,
       ],
     })
-    .catch(() => {});
+    .catch(
+      (err) => {
+        console.error(
+          'Failed to update unclaimed ticket message:',
+          err
+        );
+      }
+    );
+
+  return;
 }
 
 
@@ -2952,8 +2998,6 @@ async function forceCloseTicket(interaction) {
     interaction.channel.delete().catch(() => {});
   }, (config.closeCountdownSeconds || 5) * 1000);
 }
-
-
 /* =========================================================
    EXPORTS
 ========================================================= */
