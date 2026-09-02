@@ -33,8 +33,29 @@ function isMod(member) {
   );
 }
 
+function canModerate(moderator, target) {
+  if (!moderator || !target) return false;
+
+  // Cannot moderate yourself
+  if (moderator.id === target.id) {
+    return false;
+  }
+
+  // Cannot moderate the server owner
+  if (target.guild.ownerId === target.id) {
+    return false;
+  }
+
+  // Moderator must have a HIGHER role than the target
+  return (
+    moderator.roles.highest.position >
+    target.roles.highest.position
+  );
+}
+
 module.exports = {
   isAdmin,
   isSupport,
   isMod,
+  canModerate,
 };
