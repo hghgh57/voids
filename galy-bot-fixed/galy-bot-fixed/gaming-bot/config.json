@@ -51,80 +51,79 @@
     "color": "#5865F2",
     "footer": "We usually respond within a few hours. Dev: Forrealrob."
   },
+"categories": [
+  {
+    "id": "support",
+    "label": "Support",
+    "description": "General help or questions",
+    "emoji": "📩",
+    "questions": [
+      "What do you need help with?",
+      "What's your IGN?"
+    ]
+  },
+  {
+    "id": "giveaway_claim",
+    "label": "Giveaway Claim",
+    "description": "Claim a giveaway you won",
+    "emoji": "🎉",
+    "questions": [
+      "How much did you win?",
+      "Who was the giveaway hosted by?"
+    ]
+  },
+  {
+    "id": "giveaway_sponsor",
+    "label": "Giveaway Sponsor",
+    "description": "Sponsor a giveaway",
+    "emoji": "🏆"
+  },
+  {
+    "id": "spawner_buy",
+    "label": "Spawner Buy",
+    "description": "Buy spawners from staff",
+    "emoji": "💀",
+    "questions": [
+      "How many do you want to buy?",
+      "What's your IGN?"
+    ]
+  },
+  {
+    "id": "spawner_sell",
+    "label": "Spawner Sell",
+    "description": "Sell spawners to staff",
+    "emoji": "💀",
+    "questions": [
+      "How many do you want to sell?",
+      "What's your IGN?"
+    ]
+  },
+  {
+    "id": "partner",
+    "label": "Partnership",
+    "description": "Partner with our server",
+    "emoji": "🤝",
+    "questions": [
+      "How many members does your server have?",
+      "Do you agree to our requirements?"
+    ]
+  },
+  {
+    "id": "inq",
+    "label": "Server Inquiry",
+    "description": "Open a ticket for a serious inquiry",
+    "emoji": "🚨",
+    "questions": [
+      "What is your inquiry?"
+    ]
+  }
+],
 
-  "categories": [
-    {
-      "id": "support",
-      "label": "Support",
-      "description": "General help or questions",
-      "emoji": "📩",
-      "questions": [
-        "What do you need help with?",
-        "What's your IGN?"
-      ]
-    },
-    {
-      "id": "giveaway_claim",
-      "label": "Giveaway Claim",
-      "description": "Claim a giveaway you won",
-      "emoji": "🎉",
-      "questions": [
-        "How much did you win?",
-        "Who was the giveaway hosted by?"
-      ]
-    },
-    {
-      "id": "giveaway_sponsor",
-      "label": "Giveaway Sponsor",
-      "description": "Sponsor a giveaway",
-      "emoji": "🏆"
-    },
-    {
-      "id": "spawner_buy",
-      "label": "Spawner Buy",
-      "description": "Buy spawners from staff",
-      "emoji": "💀",
-      "questions": [
-        "How many do you want to buy?",
-        "What's your IGN?"
-      ]
-    },
-    {
-      "id": "spawner_sell",
-      "label": "Spawner Sell",
-      "description": "Sell spawners to staff",
-      "emoji": "💀",
-      "questions": [
-        "How many do you want to sell?",
-        "What's your IGN?"
-      ]
-    },
-    {
-      "id": "partner",
-      "label": "Partnership",
-      "description": "Partner with our server",
-      "emoji": "🤝",
-      "questions": [
-        "How many members does your server have?",
-        "Do you agree to our requirements?"
-      ]
-    },
-    {
-      "id": "inq",
-      "label": "Server Inquiry",
-      "description": "Open a ticket for a serious inquiry",
-      "emoji": "🚨",
-      "questions": [
-        "What is your inquiry?"
-      ]
-    }
-  ],
+"serviceTicketCategoryId": "1540667930893877278",
 
-  "serviceTicketCategoryId": "1540667930893877278",
-
-  "serviceTicketRoleIds": [
-    "1540668070345838592"
-  ],
+"serviceTicketRoleIds": [
+  "1540668070345838592"
+],
 
   "servicePanel": {
     "title": "",
