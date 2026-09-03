@@ -216,7 +216,7 @@
       "id": "ticket staff",
       "label": "tickets staff",
       "description": "Apply to join the ticket staff team",
-      "emoji": "🏗️",
+      "emoji": "🎟️",
       "color": "#5865F2",
       "questions": [
         "What is your Discord username and ID?",
