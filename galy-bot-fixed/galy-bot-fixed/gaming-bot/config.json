@@ -57,7 +57,7 @@
 
   "panel": {
     "title": "",
-    "description": "📩 **support**\nGet support from staff\n\n🎁 **giveaway sponsor**\nSponsor a giveaway for the server (check out FAQ)\n\n🎊 **giveaway claim**\nClaim a giveaway you won (make sure you claim it before claim time is over)\n\n💀 **spawner sell**\nSell spawners to staff\n-# We never go first\n\n💀 **spawner buy**\nBuy spawners from staff\n-# We never go first\n\n🤝 **partnership**\nPartner with our server — make sure to check our requirements\n\n⚙️ **missed gamble**\nOpen this if void missed a gamble | must have proof",
+    "description": "📩 **support**\nGet support from staff\n\n🎁 **giveaway sponsor**\nSponsor a giveaway for the server (check out FAQ)\n\n🎊 **giveaway claim**\nClaim a giveaway you won (make sure you claim it before claim time is over)\n\n💀 **spawner sell**\nSell spawners to staff\n-# We never go first\n\n💀 **spawner buy**\nBuy spawners from staff\n-# We never go first\n\n🤝 **partnership**\nPartner with our server — make sure to check our requirements\n\n⚙️ **missed gamble**\nOpen this if void mised a gamble | must have proof",
     "color": "#5865F2",
     "footer": "We usually respond within a few hours.",
     "image": "https://media.discordapp.net/attachments/1526923660823232553/1544686425058840696/Screenshot_2026-09-02_223044.png?ex=6a9968d6&is=6a981756&hm=2f518876f558a9a2710c7843866b3ff795f3a29365c514ee2ad3c39745126552&=&format=webp&quality=lossless"
@@ -216,7 +216,7 @@
 
   "reactionRoles": {
     "title": "Reaction Roles",
-    "description": "Click a button below to add or remove a role.\n\n📢 Spawner Price Ping — Get pinged when spawner prices change.\n🎉 Giveaway Ping — Get pinged for giveaways.\n🎁 Quickdrop Ping — Get pinged for quickdrops.",
+    "description": "# 📍reaction roles📍\n## select urs now\n**💸spawner price ping💀**\n> get pinged when we update are spawner prices\n**🎉quick drop🎉**\n> Get pinged for quick drops\n**🎁giveaway ping🎁**\n> get pinged for giveaways",
     "color": "#5865F2",
     "roles": [
       {
