@@ -653,7 +653,7 @@ async function scanGiveawayChannel(
   maxMessages
 ) {
 
-  const wins = [];
+  let bestWin = null;
 
   let before;
 
@@ -721,9 +721,6 @@ async function scanGiveawayChannel(
       messages.values()
     ) {
 
-      /*
-       * ONLY official GiveawayBot.
-       */
       if (
         message.author?.id !==
         OFFICIAL_GIVEAWAY_BOT_ID
@@ -751,8 +748,23 @@ async function scanGiveawayChannel(
       }
 
 
-      wins.push({
+      const prize =
+        extractGiveawayPrize(
+          message
+        );
 
+
+      if (
+        !prize ||
+        /^unknown prize$/i.test(
+          prize
+        )
+      ) {
+        continue;
+      }
+
+
+      const win = {
         messageId:
           message.id,
 
@@ -760,14 +772,22 @@ async function scanGiveawayChannel(
           channel.id,
 
         prize:
-          extractGiveawayPrize(
-            message
-          ),
+          prize,
 
         createdTimestamp:
           message.createdTimestamp ||
           0,
-      });
+      };
+
+
+      if (
+        !bestWin ||
+        win.createdTimestamp >
+          bestWin.createdTimestamp
+      ) {
+        bestWin =
+          win;
+      }
     }
 
 
@@ -789,9 +809,10 @@ async function scanGiveawayChannel(
   }
 
 
-  return wins;
+  return bestWin
+    ? [bestWin]
+    : [];
 }
-
 
 async function findGiveawayWins(
   client,
@@ -843,7 +864,7 @@ async function findGiveawayWins(
     );
 
 
-  const wins = [];
+  let newestWin = null;
 
 
   for (
@@ -902,37 +923,27 @@ async function findGiveawayWins(
       );
 
 
-    wins.push(
-      ...channelWins
-    );
+    for (
+      const win of
+      channelWins
+    ) {
+
+      if (
+        !newestWin ||
+        win.createdTimestamp >
+          newestWin.createdTimestamp
+      ) {
+        newestWin =
+          win;
+      }
+    }
   }
 
 
-  const unique =
-    new Map();
-
-
-  for (
-    const win of
-    wins
-  ) {
-
-    unique.set(
-      `${win.channelId}:${win.messageId}`,
-      win
-    );
-  }
-
-
-  return [
-    ...unique.values()
-  ].sort(
-    (a, b) =>
-      b.createdTimestamp -
-      a.createdTimestamp
-  );
+  return newestWin
+    ? [newestWin]
+    : [];
 }
-
 
 /* =========================================================
    CREATE NORMAL / SERVICE TICKET
