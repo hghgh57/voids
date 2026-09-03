@@ -110,12 +110,12 @@
     ]
   },
   {
-    "id": "inq",
-    "label": "Server Inquiry",
-    "description": "Open a ticket for a serious inquiry",
-    "emoji": "🚨",
+    "id": "missed gamble",
+    "label": "missed gamble",
+    "description": "Open this if void missed your gamble",
+    "emoji": "⚙️",
     "questions": [
-      "What is your inquiry?"
+      "how much did you pay | send a ss or clip in ticket"
     ]
   }
 ],
