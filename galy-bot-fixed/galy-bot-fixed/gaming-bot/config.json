@@ -1,6 +1,10 @@
 {
-  "adminRoleIds": ["1526913504668287026"],
-  "supportRoleIds": ["1526913504668287026"],
+  "adminRoleIds": [
+    "1526913504668287026"
+  ],
+  "supportRoleIds": [
+    "1526913504668287026"
+  ],
   "staffTrackerChannelId": "1537666867890491402",
   "changelogAnnounceChannelId": "1530572775255834696",
 
@@ -19,10 +23,16 @@
 
   "welcomeChannelId": "1526915443326062735",
 
-  "ticketRoleIds": ["1526936584253997146"],
-  "applicationTicketRoleIds": ["1540606063911510086"],
+  "ticketRoleIds": [
+    "1526936584253997146"
+  ],
+  "applicationTicketRoleIds": [
+    "1540606063911510086"
+  ],
 
-  "modRoleIds": ["1492833649123393676"],
+  "modRoleIds": [
+    "1492833649123393676"
+  ],
   "modLogChannelId": "1530947462897078354",
   "mutedRoleId": "1530947173666259085",
 
@@ -37,94 +47,96 @@
     }
   ],
 
-"maxOpenTicketsPerUser": 2,
-"closeCountdownSeconds": 2,
+  "maxOpenTicketsPerUser": 2,
+  "closeCountdownSeconds": 2,
 
-"giveawayCheckChannelIds": [
-  "1526932749061980180",
-  "1526932819996180510"
-],
+  "giveawayCheckChannelIds": [
+    "1526932749061980180",
+    "1526932819996180510"
+  ],
 
   "panel": {
     "title": "",
     "description": "📩 **support**\nGet support from staff\n\n🎁 **giveaway sponsor**\nSponsor a giveaway for the server (check out FAQ)\n\n🎊 **giveaway claim**\nClaim a giveaway you won (make sure you claim it before claim time is over)\n\n💀 **spawner sell**\nSell spawners to staff\n-# We never go first\n\n💀 **spawner buy**\nBuy spawners from staff\n-# We never go first\n\n🤝 **partnership**\nPartner with our server — make sure to check our requirements\n\n⚙️ **missed gamble**\nOpen this if void mised a gamble | must have proof",
     "color": "#5865F2",
     "footer": "We usually respond within a few hours.",
-   "image": "https://media.discordapp.net/attachments/1526923660823232553/1544686425058840696/Screenshot_2026-09-02_223044.png?ex=6a9968d6&is=6a981756&hm=2f518876f558a9a2710c7843866b3ff795f3a29365c514ee2ad3c39745126552&=&format=webp&quality=lossless"
+    "image": "https://media.discordapp.net/attachments/1526923660823232553/1544686425058840696/Screenshot_2026-09-02_223044.png?ex=6a9968d6&is=6a981756&hm=2f518876f558a9a2710c7843866b3ff795f3a29365c514ee2ad3c39745126552&=&format=webp&quality=lossless"
   },
-"categories": [
-  {
-    "id": "support",
-    "label": "Support",
-    "description": "General help or questions",
-    "emoji": "📩",
-    "questions": [
-      "What do you need help with?",
-      "What's your IGN?"
-    ]
-  },
-  {
-    "id": "giveaway_claim",
-    "label": "Giveaway Claim",
-    "description": "Claim a giveaway you won",
-    "emoji": "🎉",
-    "questions": [
-      "How much did you win?",
-      "Who was the giveaway hosted by?"
-    ]
-  },
-  {
-    "id": "giveaway_sponsor",
-    "label": "Giveaway Sponsor",
-    "description": "Sponsor a giveaway",
-    "emoji": "🏆"
-  },
-  {
-    "id": "spawner_buy",
-    "label": "Spawner Buy",
-    "description": "Buy spawners from staff",
-    "emoji": "💀",
-    "questions": [
-      "How many do you want to buy?",
-      "What's your IGN?"
-    ]
-  },
-  {
-    "id": "spawner_sell",
-    "label": "Spawner Sell",
-    "description": "Sell spawners to staff",
-    "emoji": "💀",
-    "questions": [
-      "How many do you want to sell?",
-      "What's your IGN?"
-    ]
-  },
-  {
-    "id": "partner",
-    "label": "Partnership",
-    "description": "Partner with our server",
-    "emoji": "🤝",
-    "questions": [
-      "How many members does your server have?",
-      "Do you agree to our requirements?"
-    ]
-  },
-  {
-    "id": "missed gamble",
-    "label": "missed gamble",
-    "description": "Open this if voidplier missed your gamble",
-    "emoji": "⚙️",
-    "questions": [
-      "how much did you pay | send a ss or clip in ticket"
-    ]
-  }
-],
 
-"serviceTicketCategoryId": "1540667930893877278",
+  "categories": [
+    {
+      "id": "support",
+      "label": "Support",
+      "description": "General help or questions",
+      "emoji": "📩",
+      "questions": [
+        "What do you need help with?",
+        "What's your IGN?"
+      ]
+    },
+    {
+      "id": "giveaway_claim",
+      "label": "Giveaway Claim",
+      "description": "Claim a giveaway you won",
+      "emoji": "🎉",
+      "questions": [
+        "How much did you win?",
+        "Who was the giveaway hosted by?"
+      ]
+    },
+    {
+      "id": "giveaway_sponsor",
+      "label": "Giveaway Sponsor",
+      "description": "Sponsor a giveaway",
+      "emoji": "🏆"
+    },
+    {
+      "id": "spawner_buy",
+      "label": "Spawner Buy",
+      "description": "Buy spawners from staff",
+      "emoji": "💀",
+      "questions": [
+        "How many do you want to buy?",
+        "What's your IGN?"
+      ]
+    },
+    {
+      "id": "spawner_sell",
+      "label": "Spawner Sell",
+      "description": "Sell spawners to staff",
+      "emoji": "💀",
+      "questions": [
+        "How many do you want to sell?",
+        "What's your IGN?"
+      ]
+    },
+    {
+      "id": "partner",
+      "label": "Partnership",
+      "description": "Partner with our server",
+      "emoji": "🤝",
+      "questions": [
+        "How many members does your server have?",
+        "Do you agree to our requirements?"
+      ]
+    },
+    {
+      "id": "missed gamble",
+      "label": "missed gamble",
+      "description": "Open this if voidplier missed your gamble",
+      "emoji": "⚙️",
+      "questions": [
+        "how much did you pay",
+        "send clip here"
+      ]
+    }
+  ],
 
-"serviceTicketRoleIds": [
-  "1540668070345838592"
-],
+  "serviceTicketCategoryId": "1540667930893877278",
+
+  "serviceTicketRoleIds": [
+    "1540668070345838592"
+  ],
 
   "servicePanel": {
     "title": "",
@@ -285,9 +297,7 @@
 
   "logging": {
     "enabled": true,
-
     "logGuildId": "1542361762186268765",
-
     "channels": {
       "message": "1542364917829738496",
       "member": "1542364771138015334",
