@@ -112,7 +112,7 @@
   {
     "id": "missed gamble",
     "label": "missed gamble",
-    "description": "Open this if void missed your gamble",
+    "description": "Open this if voidplier missed your gamble",
     "emoji": "⚙️",
     "questions": [
       "how much did you pay | send a ss or clip in ticket"
