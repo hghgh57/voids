@@ -1224,7 +1224,14 @@ async function createTicket(
           config.panel?.color ||
           '#5865F2'
         )
-        .setTimestamp();
+        .setTimestamp()
+        .setFooter({
+          text:
+            `Ticket ID: ${channel.id} • ${new Date(channel.createdTimestamp).toLocaleDateString('en-AU')} ${new Date(channel.createdTimestamp).toLocaleTimeString('en-AU', {
+              hour: '2-digit',
+              minute: '2-digit'
+            })}`
+        });
 
 
     if (
