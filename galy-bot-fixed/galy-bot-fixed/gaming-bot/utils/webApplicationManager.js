@@ -1,4 +1,4 @@
-const express = require('express');
+const http = require('http');
 const crypto = require('crypto');
 const {
   EmbedBuilder,
@@ -7,240 +7,657 @@ const {
   ButtonStyle,
 } = require('discord.js');
 
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
 function safeString(value, max = 1000) {
-  return String(value ?? '').trim().slice(0, max);
+  return String(value ?? '')
+    .trim()
+    .slice(0, max);
 }
 
+
 function makeApiKeyValid(providedKey) {
-  const expectedKey = process.env.APPLICATIONS_API_KEY;
+  const expectedKey =
+    process.env.APPLICATIONS_API_KEY;
 
   if (!expectedKey || !providedKey) {
     return false;
   }
 
+  const provided =
+    Buffer.from(String(providedKey));
+
+  const expected =
+    Buffer.from(String(expectedKey));
+
+  if (provided.length !== expected.length) {
+    return false;
+  }
+
   try {
     return crypto.timingSafeEqual(
-      Buffer.from(String(providedKey)),
-      Buffer.from(String(expectedKey))
+      provided,
+      expected
     );
   } catch {
     return false;
   }
 }
 
-function createApplicationEmbed(application) {
-  const embed = new EmbedBuilder()
-    .setTitle(
-      `${application.emoji || '📋'} ${application.label || 'Application'}`
-    )
-    .setColor(application.color || '#5865F2')
-    .setDescription(
-      `**New ${application.label || 'Application'}**\n\n` +
-      `**Applicant:** <@${application.userId}>\n` +
-      `**Discord ID:** \`${application.userId}\`\n\n` +
-      `**Submitted:** <t:${Math.floor(Date.now() / 1000)}:F>`
-    )
-    .setTimestamp();
 
-  const answers = application.answers || [];
+/* =========================================================
+   READ REQUEST BODY
+========================================================= */
 
-  answers.slice(0, 25).forEach((answer, index) => {
-    const question = safeString(
-      answer.question || `Question ${index + 1}`,
-      200
-    );
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
 
-    const response = safeString(
-      answer.answer || 'No answer provided.',
-      1000
-    );
+    req.on('data', (chunk) => {
+      body += chunk;
 
-    embed.addFields({
-      name: `${index + 1}. ${question}`,
-      value: response || 'No answer provided.',
-      inline: false,
+      if (body.length > 1024 * 1024) {
+        reject(
+          new Error(
+            'Request body is too large.'
+          )
+        );
+
+        req.destroy();
+      }
     });
+
+    req.on('end', () => {
+      if (!body) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(
+          new Error(
+            'Invalid JSON body.'
+          )
+        );
+      }
+    });
+
+    req.on('error', reject);
   });
+}
+
+
+/* =========================================================
+   SEND JSON
+========================================================= */
+
+function sendJson(
+  res,
+  statusCode,
+  data
+) {
+  const output =
+    JSON.stringify(data);
+
+  res.writeHead(
+    statusCode,
+    {
+      'Content-Type':
+        'application/json',
+      'Content-Length':
+        Buffer.byteLength(output),
+    }
+  );
+
+  res.end(output);
+}
+
+
+/* =========================================================
+   APPLICATION EMBED
+========================================================= */
+
+function createApplicationEmbed(
+  application
+) {
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        `${application.emoji || '📋'} ${
+          application.label ||
+          'Application'
+        }`
+      )
+      .setColor(
+        application.color ||
+        '#5865F2'
+      )
+      .setDescription(
+        `**New ${
+          application.label ||
+          'Application'
+        }**\n\n` +
+        `**Applicant:** <@${application.userId}>\n` +
+        `**Discord ID:** \`${application.userId}\`\n\n` +
+        `**Submitted:** <t:${Math.floor(
+          Date.now() / 1000
+        )}:F>`
+      )
+      .setTimestamp();
+
+  const answers =
+    Array.isArray(
+      application.answers
+    )
+      ? application.answers
+      : [];
+
+  answers
+    .slice(0, 25)
+    .forEach(
+      (answer, index) => {
+        const question =
+          safeString(
+            answer?.question ||
+              `Question ${
+                index + 1
+              }`,
+            200
+          );
+
+        const response =
+          safeString(
+            answer?.answer ||
+              'No answer provided.',
+            1000
+          );
+
+        embed.addFields({
+          name:
+            `${index + 1}. ${question}`,
+          value:
+            response ||
+            'No answer provided.',
+          inline: false,
+        });
+      }
+    );
 
   return embed;
 }
 
-function createApplicationButtons(userId, applicationId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(
-        `app_accept_${userId}_${applicationId}`
-      )
-      .setLabel('Accept')
-      .setEmoji('✅')
-      .setStyle(ButtonStyle.Success),
 
-    new ButtonBuilder()
-      .setCustomId(
-        `app_deny_${userId}_${applicationId}`
-      )
-      .setLabel('Deny')
-      .setEmoji('❌')
-      .setStyle(ButtonStyle.Danger)
-  );
+/* =========================================================
+   APPLICATION BUTTONS
+========================================================= */
+
+function createApplicationButtons(
+  userId,
+  applicationId
+) {
+  return new ActionRowBuilder()
+    .addComponents(
+
+      new ButtonBuilder()
+        .setCustomId(
+          `app_accept_${userId}_${applicationId}`
+        )
+        .setLabel('Accept')
+        .setEmoji('✅')
+        .setStyle(
+          ButtonStyle.Success
+        ),
+
+      new ButtonBuilder()
+        .setCustomId(
+          `app_deny_${userId}_${applicationId}`
+        )
+        .setLabel('Deny')
+        .setEmoji('❌')
+        .setStyle(
+          ButtonStyle.Danger
+        )
+
+    );
 }
 
-function startWebApplicationServer(client, config) {
-  const app = express();
 
-  app.use(express.json({ limit: '1mb' }));
+/* =========================================================
+   FIND APPLICATION REVIEW CHANNEL
+========================================================= */
 
-  /*
-   * Health check
-   */
-  app.get('/', (req, res) => {
-    res.json({
-      online: true,
-      bot: client.user
-        ? client.user.tag
-        : 'starting',
-      service: 'Void’s Cove application API',
-    });
-  });
+async function getReviewChannel(
+  client,
+  config
+) {
+  const channelId =
+    config.websiteApplicationChannelId;
 
-  /*
-   * Website application endpoint
-   */
-  app.post('/api/applications', async (req, res) => {
-    try {
-      const apiKey =
-        req.headers['x-application-key'];
+  if (!channelId) {
+    return null;
+  }
 
-      if (!makeApiKeyValid(apiKey)) {
-        return res.status(401).json({
-          success: false,
-          error: 'Invalid API key.',
-        });
-      }
+  const channel =
+    await client.channels
+      .fetch(channelId)
+      .catch(() => null);
 
-      const body = req.body || {};
+  if (
+    !channel ||
+    !channel.isTextBased()
+  ) {
+    return null;
+  }
 
-      const userId = safeString(body.userId, 30);
-      const applicationId = safeString(
-        body.applicationId,
-        100
-      );
+  return channel;
+}
 
-      if (!userId || !applicationId) {
-        return res.status(400).json({
-          success: false,
-          error:
-            'userId and applicationId are required.',
-        });
-      }
 
-      const applicationConfig = (
-        config.applications || []
-      ).find(
-        (application) =>
-          String(application.id) ===
-          String(applicationId)
-      );
+/* =========================================================
+   HANDLE APPLICATION
+========================================================= */
 
-      if (!applicationConfig) {
-        return res.status(404).json({
-          success: false,
-          error: 'Application type not found.',
-        });
-      }
+async function handleApplication(
+  client,
+  config,
+  body
+) {
+  const userId =
+    safeString(
+      body.userId,
+      30
+    );
 
-      const reviewChannelId =
-        config.websiteApplicationChannelId;
+  const applicationId =
+    safeString(
+      body.applicationId,
+      100
+    );
 
-      if (!reviewChannelId) {
-        return res.status(500).json({
-          success: false,
-          error:
-            'websiteApplicationChannelId is not configured.',
-        });
-      }
+  if (!userId) {
+    return {
+      status: 400,
+      data: {
+        success: false,
+        error:
+          'Discord user ID is required.',
+      },
+    };
+  }
 
-      const channel =
-        await client.channels
-          .fetch(reviewChannelId)
-          .catch(() => null);
+  if (!applicationId) {
+    return {
+      status: 400,
+      data: {
+        success: false,
+        error:
+          'Application ID is required.',
+      },
+    };
+  }
 
-      if (!channel || !channel.isTextBased()) {
-        return res.status(500).json({
-          success: false,
-          error:
-            'Application review channel could not be found.',
-        });
-      }
 
-      const answers = Array.isArray(body.answers)
-        ? body.answers
-        : [];
+  /* =======================================================
+     CHECK DISCORD USER ID
+  ======================================================= */
 
-      const embed = createApplicationEmbed({
-        userId,
+  if (
+    !/^\d{15,25}$/.test(
+      userId
+    )
+  ) {
+    return {
+      status: 400,
+      data: {
+        success: false,
+        error:
+          'Invalid Discord user ID.',
+      },
+    };
+  }
+
+
+  /* =======================================================
+     FIND APPLICATION CONFIG
+  ======================================================= */
+
+  const applicationConfig =
+    (
+      config.applications ||
+      []
+    ).find(
+      (application) =>
+        String(application.id) ===
+        String(applicationId)
+    );
+
+  if (!applicationConfig) {
+    return {
+      status: 404,
+      data: {
+        success: false,
+        error:
+          'Application type not found.',
+      },
+    };
+  }
+
+
+  /* =======================================================
+     REVIEW CHANNEL
+  ======================================================= */
+
+  const channel =
+    await getReviewChannel(
+      client,
+      config
+    );
+
+  if (!channel) {
+    return {
+      status: 500,
+      data: {
+        success: false,
+        error:
+          'Application review channel could not be found.',
+      },
+    };
+  }
+
+
+  /* =======================================================
+     ANSWERS
+  ======================================================= */
+
+  const answers =
+    Array.isArray(body.answers)
+      ? body.answers
+      : [];
+
+
+  /* =======================================================
+     EMBED
+  ======================================================= */
+
+  const embed =
+    createApplicationEmbed({
+      userId,
+      applicationId,
+
+      label:
+        applicationConfig.label ||
         applicationId,
-        label:
-          applicationConfig.label ||
-          applicationId,
-        emoji:
-          applicationConfig.emoji ||
-          '📋',
-        color:
-          applicationConfig.color ||
-          '#5865F2',
-        answers,
-      });
 
-      const message =
-        await channel.send({
-          embeds: [embed],
-          components: [
-            createApplicationButtons(
-              userId,
-              applicationId
-            ),
-          ],
-        });
+      emoji:
+        applicationConfig.emoji ||
+        '📋',
 
-      /*
-       * Save enough information for accept/deny.
-       * The custom IDs contain the applicant and app ID,
-       * so no database is required just to process the buttons.
-       */
+      color:
+        applicationConfig.color ||
+        '#5865F2',
 
-      console.log(
-        `[WEB APPLICATION] ${applicationConfig.label || applicationId} submitted by ${userId}. Message: ${message.id}`
-      );
+      answers,
+    });
 
-      return res.json({
-        success: true,
-        messageId: message.id,
-      });
-    } catch (error) {
+
+  /* =======================================================
+     SEND APPLICATION
+  ======================================================= */
+
+  const message =
+    await channel.send({
+      embeds: [
+        embed,
+      ],
+
+      components: [
+        createApplicationButtons(
+          userId,
+          applicationId
+        ),
+      ],
+    });
+
+
+  console.log(
+    `[WEB APPLICATION] ${
+      applicationConfig.label ||
+      applicationId
+    } submitted by ${userId}. Message: ${message.id}`
+  );
+
+
+  return {
+    status: 200,
+    data: {
+      success: true,
+      messageId:
+        message.id,
+    },
+  };
+}
+
+
+/* =========================================================
+   START WEB APPLICATION SERVER
+========================================================= */
+
+function startWebApplicationServer(
+  client,
+  config
+) {
+  const port =
+    Number(
+      process.env.PORT
+    ) || 3000;
+
+
+  const server =
+    http.createServer(
+      async (req, res) => {
+
+        try {
+
+          /* =================================================
+             HEALTH CHECK
+          ================================================= */
+
+          if (
+            req.method === 'GET' &&
+            req.url === '/'
+          ) {
+
+            return sendJson(
+              res,
+              200,
+              {
+                online: true,
+
+                bot:
+                  client.user
+                    ? client.user.tag
+                    : 'starting',
+
+                service:
+                  'Void’s Cove application API',
+              }
+            );
+          }
+
+
+          /* =================================================
+             APPLICATION SUBMISSION
+          ================================================= */
+
+          if (
+            req.method === 'POST' &&
+            req.url ===
+              '/api/applications'
+          ) {
+
+            const apiKey =
+              req.headers[
+                'x-application-key'
+              ];
+
+
+            /* ===============================================
+               API KEY CHECK
+            =============================================== */
+
+            if (
+              !makeApiKeyValid(
+                apiKey
+              )
+            ) {
+
+              return sendJson(
+                res,
+                401,
+                {
+                  success: false,
+                  error:
+                    'Invalid API key.',
+                }
+              );
+            }
+
+
+            /* ===============================================
+               REQUEST BODY
+            =============================================== */
+
+            let body;
+
+            try {
+
+              body =
+                await readRequestBody(
+                  req
+                );
+
+            } catch (error) {
+
+              return sendJson(
+                res,
+                400,
+                {
+                  success: false,
+                  error:
+                    error.message ||
+                    'Invalid request body.',
+                }
+              );
+            }
+
+
+            /* ===============================================
+               PROCESS APPLICATION
+            =============================================== */
+
+            const result =
+              await handleApplication(
+                client,
+                config,
+                body
+              );
+
+
+            return sendJson(
+              res,
+              result.status,
+              result.data
+            );
+          }
+
+
+          /* =================================================
+             NOT FOUND
+          ================================================= */
+
+          return sendJson(
+            res,
+            404,
+            {
+              success: false,
+              error:
+                'Endpoint not found.',
+            }
+          );
+
+        } catch (error) {
+
+          console.error(
+            '[WEB APPLICATION] Failed to handle request:',
+            error
+          );
+
+
+          if (!res.headersSent) {
+
+            return sendJson(
+              res,
+              500,
+              {
+                success: false,
+                error:
+                  'Failed to submit application.',
+              }
+            );
+          }
+
+          res.end();
+        }
+      }
+    );
+
+
+  /* =========================================================
+     SERVER ERROR
+  ========================================================= */
+
+  server.on(
+    'error',
+    (error) => {
+
       console.error(
-        '[WEB APPLICATION] Failed to receive application:',
+        '[WEB APPLICATION] Server error:',
         error
       );
 
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to submit application.',
-      });
     }
-  });
+  );
 
-  const port =
-    Number(process.env.PORT) || 3000;
 
-  app.listen(port, '0.0.0.0', () => {
-    console.log(
-      `[WEB APPLICATION] API listening on port ${port}`
-    );
-  });
+  /* =========================================================
+     LISTEN
+  ========================================================= */
 
-  return app;
+  server.listen(
+    port,
+    '0.0.0.0',
+    () => {
+
+      console.log(
+        `[WEB APPLICATION] API listening on port ${port}`
+      );
+
+    }
+  );
+
+
+  return server;
 }
+
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 module.exports = {
   startWebApplicationServer,
