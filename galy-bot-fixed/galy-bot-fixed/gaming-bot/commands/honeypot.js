@@ -61,7 +61,9 @@ function saveData(data) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('honeypot')
-    .setDescription('Create a honeypot in this channel.')
+    .setDescription(
+      'Create a honeypot in this channel.'
+    )
 
     .addStringOption(option =>
       option
@@ -87,7 +89,7 @@ module.exports = {
       option
         .setName('button_emoji')
         .setDescription(
-          'The emoji shown on the button.'
+          'The emoji shown on the kick counter.'
         )
         .setRequired(false)
         .setMaxLength(100)
@@ -137,13 +139,20 @@ module.exports = {
           'Sending a message in this channel will result in a kick.',
       });
 
+    /*
+      Disabled button:
+      - Shows the kick count
+      - Cannot be clicked
+      - Emoji can be customised
+    */
     const button = new ButtonBuilder()
       .setCustomId(
-        `honeypot_info_${interaction.channel.id}`
+        `honeypot_counter_${interaction.channel.id}`
       )
       .setLabel('Kicks: 0')
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji(buttonEmoji);
+      .setEmoji(buttonEmoji)
+      .setDisabled(true);
 
     const row = new ActionRowBuilder()
       .addComponents(button);
