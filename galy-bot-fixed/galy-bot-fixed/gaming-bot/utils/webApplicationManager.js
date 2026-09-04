@@ -1,5 +1,6 @@
 const http = require('http');
 const crypto = require('crypto');
+
 const {
   EmbedBuilder,
   ActionRowBuilder,
@@ -7,50 +8,32 @@ const {
   ButtonStyle,
 } = require('discord.js');
 
-
-/* =========================================================
-   HELPERS
-========================================================= */
-
 function safeString(value, max = 1000) {
   return String(value ?? '')
     .trim()
     .slice(0, max);
 }
 
-
 function makeApiKeyValid(providedKey) {
-  const expectedKey =
-    process.env.APPLICATIONS_API_KEY;
+  const expectedKey = process.env.APPLICATIONS_API_KEY;
 
   if (!expectedKey || !providedKey) {
     return false;
   }
 
-  const provided =
-    Buffer.from(String(providedKey));
-
-  const expected =
-    Buffer.from(String(expectedKey));
+  const provided = Buffer.from(String(providedKey));
+  const expected = Buffer.from(String(expectedKey));
 
   if (provided.length !== expected.length) {
     return false;
   }
 
   try {
-    return crypto.timingSafeEqual(
-      provided,
-      expected
-    );
+    return crypto.timingSafeEqual(provided, expected);
   } catch {
     return false;
   }
 }
-
-
-/* =========================================================
-   READ REQUEST BODY
-========================================================= */
 
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
@@ -60,12 +43,7 @@ function readRequestBody(req) {
       body += chunk;
 
       if (body.length > 1024 * 1024) {
-        reject(
-          new Error(
-            'Request body is too large.'
-          )
-        );
-
+        reject(new Error('Request body is too large.'));
         req.destroy();
       }
     });
@@ -79,11 +57,7 @@ function readRequestBody(req) {
       try {
         resolve(JSON.parse(body));
       } catch {
-        reject(
-          new Error(
-            'Invalid JSON body.'
-          )
-        );
+        reject(new Error('Invalid JSON body.'));
       }
     });
 
@@ -91,201 +65,113 @@ function readRequestBody(req) {
   });
 }
 
+function sendJson(res, statusCode, data) {
+  const output = JSON.stringify(data);
 
-/* =========================================================
-   SEND JSON
-========================================================= */
-
-function sendJson(
-  res,
-  statusCode,
-  data
-) {
-  const output =
-    JSON.stringify(data);
-
-  res.writeHead(
-    statusCode,
-    {
-      'Content-Type':
-        'application/json',
-      'Content-Length':
-        Buffer.byteLength(output),
-    }
-  );
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(output),
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, x-application-key',
+  });
 
   res.end(output);
 }
 
-
-/* =========================================================
-   APPLICATION EMBED
-========================================================= */
-
-function createApplicationEmbed(
-  application
-) {
-  const embed =
-    new EmbedBuilder()
-      .setTitle(
-        `${application.emoji || '📋'} ${
-          application.label ||
-          'Application'
-        }`
-      )
-      .setColor(
-        application.color ||
-        '#5865F2'
-      )
-      .setDescription(
-        `**New ${
-          application.label ||
-          'Application'
-        }**\n\n` +
+function createApplicationEmbed(application) {
+  const embed = new EmbedBuilder()
+    .setTitle(
+      `${application.emoji || '📋'} ${
+        application.label || 'Application'
+      }`
+    )
+    .setColor(application.color || '#5865F2')
+    .setDescription(
+      `**New ${
+        application.label || 'Application'
+      }**\n\n` +
         `**Applicant:** <@${application.userId}>\n` +
         `**Discord ID:** \`${application.userId}\`\n\n` +
         `**Submitted:** <t:${Math.floor(
           Date.now() / 1000
         )}:F>`
-      )
-      .setTimestamp();
-
-  const answers =
-    Array.isArray(
-      application.answers
     )
-      ? application.answers
-      : [];
+    .setTimestamp();
 
-  answers
-    .slice(0, 25)
-    .forEach(
-      (answer, index) => {
-        const question =
-          safeString(
-            answer?.question ||
-              `Question ${
-                index + 1
-              }`,
-            200
-          );
+  const answers = Array.isArray(application.answers)
+    ? application.answers
+    : [];
 
-        const response =
-          safeString(
-            answer?.answer ||
-              'No answer provided.',
-            1000
-          );
-
-        embed.addFields({
-          name:
-            `${index + 1}. ${question}`,
-          value:
-            response ||
-            'No answer provided.',
-          inline: false,
-        });
-      }
+  answers.slice(0, 25).forEach((answer, index) => {
+    const question = safeString(
+      answer?.question || `Question ${index + 1}`,
+      200
     );
+
+    const response = safeString(
+      answer?.answer || 'No answer provided.',
+      1000
+    );
+
+    embed.addFields({
+      name: `${index + 1}. ${question}`,
+      value: response || 'No answer provided.',
+      inline: false,
+    });
+  });
 
   return embed;
 }
 
+function createApplicationButtons(userId, applicationId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(
+        `app_accept_${userId}_${applicationId}`
+      )
+      .setLabel('Accept')
+      .setEmoji('✅')
+      .setStyle(ButtonStyle.Success),
 
-/* =========================================================
-   APPLICATION BUTTONS
-========================================================= */
-
-function createApplicationButtons(
-  userId,
-  applicationId
-) {
-  return new ActionRowBuilder()
-    .addComponents(
-
-      new ButtonBuilder()
-        .setCustomId(
-          `app_accept_${userId}_${applicationId}`
-        )
-        .setLabel('Accept')
-        .setEmoji('✅')
-        .setStyle(
-          ButtonStyle.Success
-        ),
-
-      new ButtonBuilder()
-        .setCustomId(
-          `app_deny_${userId}_${applicationId}`
-        )
-        .setLabel('Deny')
-        .setEmoji('❌')
-        .setStyle(
-          ButtonStyle.Danger
-        )
-
-    );
+    new ButtonBuilder()
+      .setCustomId(
+        `app_deny_${userId}_${applicationId}`
+      )
+      .setLabel('Deny')
+      .setEmoji('❌')
+      .setStyle(ButtonStyle.Danger)
+  );
 }
 
-
-/* =========================================================
-   FIND APPLICATION REVIEW CHANNEL
-========================================================= */
-
-async function getReviewChannel(
-  client,
-  config
-) {
-  const channelId =
-    config.websiteApplicationChannelId;
+async function getReviewChannel(client, config) {
+  const channelId = config.websiteApplicationChannelId;
 
   if (!channelId) {
     return null;
   }
 
-  const channel =
-    await client.channels
-      .fetch(channelId)
-      .catch(() => null);
+  const channel = await client.channels
+    .fetch(channelId)
+    .catch(() => null);
 
-  if (
-    !channel ||
-    !channel.isTextBased()
-  ) {
+  if (!channel || !channel.isTextBased()) {
     return null;
   }
 
   return channel;
 }
 
-
-/* =========================================================
-   HANDLE APPLICATION
-========================================================= */
-
-async function handleApplication(
-  client,
-  config,
-  body
-) {
-  const userId =
-    safeString(
-      body.userId,
-      30
-    );
-
-  const applicationId =
-    safeString(
-      body.applicationId,
-      100
-    );
+async function handleApplication(client, config, body) {
+  const userId = safeString(body.userId, 30);
+  const applicationId = safeString(body.applicationId, 100);
 
   if (!userId) {
     return {
       status: 400,
       data: {
         success: false,
-        error:
-          'Discord user ID is required.',
+        error: 'Discord user ID is required.',
       },
     };
   }
@@ -295,68 +181,39 @@ async function handleApplication(
       status: 400,
       data: {
         success: false,
-        error:
-          'Application ID is required.',
+        error: 'Application ID is required.',
       },
     };
   }
 
-
-  /* =======================================================
-     CHECK DISCORD USER ID
-  ======================================================= */
-
-  if (
-    !/^\d{15,25}$/.test(
-      userId
-    )
-  ) {
+  if (!/^\d{15,25}$/.test(userId)) {
     return {
       status: 400,
       data: {
         success: false,
-        error:
-          'Invalid Discord user ID.',
+        error: 'Invalid Discord user ID.',
       },
     };
   }
 
-
-  /* =======================================================
-     FIND APPLICATION CONFIG
-  ======================================================= */
-
-  const applicationConfig =
-    (
-      config.applications ||
-      []
-    ).find(
-      (application) =>
-        String(application.id) ===
-        String(applicationId)
-    );
+  const applicationConfig = (
+    config.applications || []
+  ).find(
+    (application) =>
+      String(application.id) === String(applicationId)
+  );
 
   if (!applicationConfig) {
     return {
       status: 404,
       data: {
         success: false,
-        error:
-          'Application type not found.',
+        error: 'Application type not found.',
       },
     };
   }
 
-
-  /* =======================================================
-     REVIEW CHANNEL
-  ======================================================= */
-
-  const channel =
-    await getReviewChannel(
-      client,
-      config
-    );
+  const channel = await getReviewChannel(client, config);
 
   if (!channel) {
     return {
@@ -369,295 +226,151 @@ async function handleApplication(
     };
   }
 
+  const answers = Array.isArray(body.answers)
+    ? body.answers
+    : [];
 
-  /* =======================================================
-     ANSWERS
-  ======================================================= */
+  const embed = createApplicationEmbed({
+    userId,
+    applicationId,
+    label:
+      applicationConfig.label || applicationId,
+    emoji:
+      applicationConfig.emoji || '📋',
+    color:
+      applicationConfig.color || '#5865F2',
+    answers,
+  });
 
-  const answers =
-    Array.isArray(body.answers)
-      ? body.answers
-      : [];
-
-
-  /* =======================================================
-     EMBED
-  ======================================================= */
-
-  const embed =
-    createApplicationEmbed({
-      userId,
-      applicationId,
-
-      label:
-        applicationConfig.label ||
-        applicationId,
-
-      emoji:
-        applicationConfig.emoji ||
-        '📋',
-
-      color:
-        applicationConfig.color ||
-        '#5865F2',
-
-      answers,
-    });
-
-
-  /* =======================================================
-     SEND APPLICATION
-  ======================================================= */
-
-  const message =
-    await channel.send({
-      embeds: [
-        embed,
-      ],
-
-      components: [
-        createApplicationButtons(
-          userId,
-          applicationId
-        ),
-      ],
-    });
-
+  const message = await channel.send({
+    embeds: [embed],
+    components: [
+      createApplicationButtons(
+        userId,
+        applicationId
+      ),
+    ],
+  });
 
   console.log(
     `[WEB APPLICATION] ${
-      applicationConfig.label ||
-      applicationId
+      applicationConfig.label || applicationId
     } submitted by ${userId}. Message: ${message.id}`
   );
-
 
   return {
     status: 200,
     data: {
       success: true,
-      messageId:
-        message.id,
+      messageId: message.id,
     },
   };
 }
 
+function startWebApplicationServer(client, config) {
+  const port = Number(process.env.PORT) || 3000;
 
-/* =========================================================
-   START WEB APPLICATION SERVER
-========================================================= */
+  const server = http.createServer(async (req, res) => {
+    try {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods':
+            'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers':
+            'Content-Type, x-application-key',
+        });
 
-function startWebApplicationServer(
-  client,
-  config
-) {
-  const port =
-    Number(
-      process.env.PORT
-    ) || 3000;
+        res.end();
+        return;
+      }
 
+      if (req.method === 'GET' && req.url === '/') {
+        return sendJson(res, 200, {
+          online: true,
+          bot: client.user
+            ? client.user.tag
+            : 'starting',
+          service: 'Void’s Cove application API',
+        });
+      }
 
-  const server =
-    http.createServer(
-      async (req, res) => {
+      if (
+        req.method === 'POST' &&
+        req.url === '/api/applications'
+      ) {
+        const apiKey =
+          req.headers['x-application-key'];
+
+        if (!makeApiKeyValid(apiKey)) {
+          return sendJson(res, 401, {
+            success: false,
+            error: 'Invalid API key.',
+          });
+        }
+
+        let body;
 
         try {
-
-          /* =================================================
-             HEALTH CHECK
-          ================================================= */
-
-          if (
-            req.method === 'GET' &&
-            req.url === '/'
-          ) {
-
-            return sendJson(
-              res,
-              200,
-              {
-                online: true,
-
-                bot:
-                  client.user
-                    ? client.user.tag
-                    : 'starting',
-
-                service:
-                  'Void’s Cove application API',
-              }
-            );
-          }
-
-
-          /* =================================================
-             APPLICATION SUBMISSION
-          ================================================= */
-
-          if (
-            req.method === 'POST' &&
-            req.url ===
-              '/api/applications'
-          ) {
-
-            const apiKey =
-              req.headers[
-                'x-application-key'
-              ];
-
-
-            /* ===============================================
-               API KEY CHECK
-            =============================================== */
-
-            if (
-              !makeApiKeyValid(
-                apiKey
-              )
-            ) {
-
-              return sendJson(
-                res,
-                401,
-                {
-                  success: false,
-                  error:
-                    'Invalid API key.',
-                }
-              );
-            }
-
-
-            /* ===============================================
-               REQUEST BODY
-            =============================================== */
-
-            let body;
-
-            try {
-
-              body =
-                await readRequestBody(
-                  req
-                );
-
-            } catch (error) {
-
-              return sendJson(
-                res,
-                400,
-                {
-                  success: false,
-                  error:
-                    error.message ||
-                    'Invalid request body.',
-                }
-              );
-            }
-
-
-            /* ===============================================
-               PROCESS APPLICATION
-            =============================================== */
-
-            const result =
-              await handleApplication(
-                client,
-                config,
-                body
-              );
-
-
-            return sendJson(
-              res,
-              result.status,
-              result.data
-            );
-          }
-
-
-          /* =================================================
-             NOT FOUND
-          ================================================= */
-
-          return sendJson(
-            res,
-            404,
-            {
-              success: false,
-              error:
-                'Endpoint not found.',
-            }
-          );
-
+          body = await readRequestBody(req);
         } catch (error) {
-
-          console.error(
-            '[WEB APPLICATION] Failed to handle request:',
-            error
-          );
-
-
-          if (!res.headersSent) {
-
-            return sendJson(
-              res,
-              500,
-              {
-                success: false,
-                error:
-                  'Failed to submit application.',
-              }
-            );
-          }
-
-          res.end();
+          return sendJson(res, 400, {
+            success: false,
+            error:
+              error.message ||
+              'Invalid request body.',
+          });
         }
+
+        const result = await handleApplication(
+          client,
+          config,
+          body
+        );
+
+        return sendJson(
+          res,
+          result.status,
+          result.data
+        );
       }
-    );
 
-
-  /* =========================================================
-     SERVER ERROR
-  ========================================================= */
-
-  server.on(
-    'error',
-    (error) => {
-
+      return sendJson(res, 404, {
+        success: false,
+        error: 'Endpoint not found.',
+      });
+    } catch (error) {
       console.error(
-        '[WEB APPLICATION] Server error:',
+        '[WEB APPLICATION] Failed to handle request:',
         error
       );
 
+      if (!res.headersSent) {
+        return sendJson(res, 500, {
+          success: false,
+          error: 'Failed to submit application.',
+        });
+      }
+
+      res.end();
     }
-  );
+  });
 
+  server.on('error', (error) => {
+    console.error(
+      '[WEB APPLICATION] Server error:',
+      error
+    );
+  });
 
-  /* =========================================================
-     LISTEN
-  ========================================================= */
-
-  server.listen(
-    port,
-    '0.0.0.0',
-    () => {
-
-      console.log(
-        `[WEB APPLICATION] API listening on port ${port}`
-      );
-
-    }
-  );
-
+  server.listen(port, '0.0.0.0', () => {
+    console.log(
+      `[WEB APPLICATION] API listening on port ${port}`
+    );
+  });
 
   return server;
 }
-
-
-/* =========================================================
-   EXPORT
-========================================================= */
 
 module.exports = {
   startWebApplicationServer,
