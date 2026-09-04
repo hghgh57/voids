@@ -675,6 +675,69 @@ module.exports = {
 
 
       /* =====================================================
+         HONEYPOT INFO BUTTON
+      ===================================================== */
+
+      if (
+        interaction.isButton() &&
+        interaction.customId.startsWith(
+          'honeypot_info_'
+        )
+      ) {
+        const channelId =
+          interaction.customId.replace(
+            'honeypot_info_',
+            ''
+          );
+
+        const fs = require('fs');
+        const path = require('path');
+
+        const DATA_FILE = path.join(
+          __dirname,
+          '..',
+          'data',
+          'honeypots.json'
+        );
+
+        let data = {};
+
+        try {
+          if (fs.existsSync(DATA_FILE)) {
+            data = JSON.parse(
+              fs.readFileSync(
+                DATA_FILE,
+                'utf8'
+              )
+            );
+          }
+        } catch (error) {
+          console.error(
+            '[HONEYPOT] Failed to read data:',
+            error
+          );
+        }
+
+        const honeypot =
+          data[channelId];
+
+        const kicks = Number(
+          honeypot?.kicks || 0
+        );
+
+        await interaction.reply({
+          content:
+            `🍯 **Honeypot Information**\n\n` +
+            `This channel is a honeypot. Anyone who sends a message here is automatically kicked from the server.\n\n` +
+            `**Kicks so far:** ${kicks}`,
+          ephemeral: true,
+        });
+
+        return;
+      }
+
+
+      /* =====================================================
          BUTTONS
       ===================================================== */
 
