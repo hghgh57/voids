@@ -10,6 +10,10 @@ const {
   Partials,
 } = require('discord.js');
 
+const {
+  startWebApplicationServer,
+} = require('./utils/webApplicationManager');
+
 
 /* =========================================================
    CLIENT
@@ -123,12 +127,9 @@ if (fs.existsSync(eventsPath)) {
 
       /* =====================================================
          CUSTOM MODULE
-         
+
          Modules with register(client) are NOT normal
          Discord events.
-         
-         This prevents the cross-server logger from being
-         accidentally registered as a Discord event too.
       ===================================================== */
 
       if (
@@ -207,6 +208,16 @@ if (fs.existsSync(eventsPath)) {
     }
   }
 }
+
+
+/* =========================================================
+   WEBSITE APPLICATION API
+========================================================= */
+
+startWebApplicationServer(
+  client,
+  require('./config.json')
+);
 
 
 /* =========================================================
