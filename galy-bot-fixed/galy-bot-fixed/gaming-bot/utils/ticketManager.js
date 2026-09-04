@@ -105,8 +105,8 @@ function buildTicketControlRow(
         )
         .setEmoji(
           claimed
-            ? '↩️'
-            : '🙋'
+            ? '<:Emojis_32x32_99:1545313741594304572>'
+            : '<:Emojis_32x32_295:1545313653719433246>'
         )
         .setStyle(
           ButtonStyle.Secondary
@@ -117,7 +117,7 @@ function buildTicketControlRow(
           'ticket_close'
         )
         .setLabel('Close')
-        .setEmoji('🔒')
+        .setEmoji('<:Emojis_32x32_95:1545306402715598879>')
         .setStyle(
           ButtonStyle.Danger
         ),
@@ -129,7 +129,7 @@ function buildTicketControlRow(
         .setLabel(
           'Close with Reason'
         )
-        .setEmoji('📝')
+        .setEmoji('<:Emojis_32x32_91:1545306173001957426>')
         .setStyle(
           ButtonStyle.Secondary
         )
@@ -1212,12 +1212,12 @@ async function createTicket(
     const welcomeEmbed =
       new EmbedBuilder()
         .setTitle(
-          `${category.emoji || '🎫'} ${category.label}`
+          `${category.emoji || '<:Emojis_32x32_119:1545307274560540742>'} ${category.label}`
         )
         .setDescription(
           `Hi ${user}, thanks for reaching out!\n\n` +
           `**Category:** ${category.label}\n\n` +
-          'Please provide as much detail as possible. ' +
+          'Provide as much detail as possible. ' +
           'A member of our team will be with you shortly.'
         )
         .setColor(
@@ -1431,7 +1431,7 @@ async function createTicket(
     const ticketOpenedEmbed = new EmbedBuilder()
       .setColor('#57F287')
       .setDescription(
-        `**✅ Ticket opened**\n\n` +
+        `**<:Emojis_32x32_21:1545312105354362940> Ticket opened <:Emojis_32x32_119:1545307274560540742>**\n\n` +
         `Head to ${channel}`
       );
 
