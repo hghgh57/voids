@@ -55,12 +55,12 @@ function saveData(data) {
 }
 
 /*
-  Delete all messages from a specific user
+  Delete all messages from a user
   in the honeypot channel.
 
-  Discord only allows bulk deletion for messages
-  newer than 14 days, so older messages are deleted
-  individually.
+  Discord only allows bulk deleting messages
+  newer than 14 days, so messages are deleted
+  individually here.
 */
 async function deleteUserMessages(
   channel,
@@ -92,15 +92,14 @@ async function deleteUserMessages(
             message.author?.id === userId
         );
 
-      for (const message of userMessages.values()) {
+      for (
+        const message of userMessages.values()
+      ) {
         try {
           await message.delete();
           deleted++;
         } catch (error) {
-          /*
-            The message may already be deleted,
-            or the bot may not have permission.
-          */
+          // Ignore messages that cannot be deleted.
         }
       }
 
@@ -127,6 +126,9 @@ async function deleteUserMessages(
   return deleted;
 }
 
+/*
+  Update the disabled kick counter button.
+*/
 async function updateHoneypotButton(
   client,
   honeypot
@@ -164,6 +166,15 @@ async function updateHoneypotButton(
     const kicks =
       Number(honeypot.kicks || 0);
 
+    /*
+      Button will show:
+
+      🍯 Kicks: 0
+      🍯 Kicks: 1
+      🍯 Kicks: 2
+
+      It remains disabled and cannot be clicked.
+    */
     const updatedButton =
       ButtonBuilder.from(oldButton)
         .setLabel(
@@ -171,7 +182,8 @@ async function updateHoneypotButton(
         )
         .setEmoji(
           honeypot.buttonEmoji || '🍯'
-        );
+        )
+        .setDisabled(true);
 
     const row =
       new ActionRowBuilder()
@@ -202,6 +214,10 @@ module.exports = {
             return;
           }
 
+          /*
+            Ignore bots so the honeypot does not
+            accidentally react to bot messages.
+          */
           if (message.author?.bot) {
             return;
           }
@@ -211,6 +227,9 @@ module.exports = {
           const honeypot =
             data[message.channel.id];
 
+          /*
+            This is not a honeypot channel.
+          */
           if (!honeypot) {
             return;
           }
@@ -235,8 +254,8 @@ module.exports = {
           }
 
           /*
-            Delete ALL messages from this user
-            in the honeypot channel.
+            Delete ALL messages from the user
+            in this honeypot channel.
           */
           const deletedMessages =
             await deleteUserMessages(
@@ -245,8 +264,7 @@ module.exports = {
             );
 
           /*
-            Make sure the bot can actually
-            kick the member.
+            Check whether the bot can kick them.
           */
           if (!member.kickable) {
             console.warn(
@@ -264,8 +282,8 @@ module.exports = {
           );
 
           /*
-            Only increase the counter if
-            the kick was successful.
+            Only increase the counter after
+            the kick successfully happens.
           */
           honeypot.kicks =
             Number(honeypot.kicks || 0) + 1;
@@ -273,11 +291,7 @@ module.exports = {
           saveData(data);
 
           /*
-            Update the button so it becomes:
-
-            🍯 Kicks: 1
-            🍯 Kicks: 2
-            🍯 Kicks: 3
+            Update the disabled counter button.
           */
           await updateHoneypotButton(
             client,
