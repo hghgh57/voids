@@ -1336,200 +1336,202 @@ module.exports = {
         ================================================= */
 
         if (
-          interaction.customId.startsWith(
-            'app_accept_'
-          ) ||
-          interaction.customId.startsWith(
-            'app_deny_'
-          )
+          interaction.customId.startsWith('app_accept_') ||
+          interaction.customId.startsWith('app_deny_')
         ) {
+          const isAccept = interaction.customId.startsWith('app_accept_');
+          const prefix = isAccept ? 'app_accept_' : 'app_deny_';
+          const rest = interaction.customId.replace(prefix, '');
+          const separator = rest.indexOf('_');
 
-          const isAccept =
-            interaction.customId.startsWith(
-              'app_accept_'
-            );
-
-          const prefix =
-            isAccept
-              ? 'app_accept_'
-              : 'app_deny_';
-
-          const rest =
-            interaction.customId.replace(
-              prefix,
-              ''
-            );
-
-          /*
-            Format:
-
-            app_accept_USERID_APPID
-            app_deny_USERID_APPID
-
-            Split only at the FIRST underscore.
-          */
-
-          const separator =
-            rest.indexOf('_');
-
-          if (
-            separator === -1
-          ) {
-
+          if (separator === -1) {
             return interaction.reply({
-              content:
-                '❌ Invalid application button.',
+              content: '❌ Invalid application button.',
               ephemeral: true,
             });
           }
 
-          const applicantId =
-            rest.slice(
-              0,
-              separator
-            );
+          const applicantId = rest.slice(0, separator);
+          const appId = rest.slice(separator + 1);
 
-          const appId =
-            rest.slice(
-              separator + 1
-            );
-
-
-          /* =================================================
-             STAFF CHECK
-          ================================================= */
-
-          if (
-            !interaction.member ||
-            !isSupport(
-              interaction.member
-            )
-          ) {
-
+          if (!interaction.member || !isSupport(interaction.member)) {
             return interaction.reply({
-              content:
-                'Only staff can accept or deny applications.',
+              content: 'Only staff can accept or deny applications.',
               ephemeral: true,
             });
           }
 
+          const appConfig = (config.applications || []).find(
+            (app) => String(app.id) === String(appId)
+          );
+
+          const label = appConfig ? appConfig.label : 'Application';
 
           /* =================================================
-             APPLICATION CONFIG
+             DENY BUTTON - ASK FOR REASON
           ================================================= */
 
-          const appConfig =
-            (
-              config.applications ||
-              []
-            ).find(
-              (app) =>
-                String(app.id) ===
-                String(appId)
+          if (!isAccept) {
+            const modal = new ModalBuilder()
+              .setCustomId(`app_deny_reason_${applicantId}_${appId}`)
+              .setTitle('Deny Application');
+
+            const reasonInput = new TextInputBuilder()
+              .setCustomId('application_deny_reason')
+              .setLabel('Reason for denial')
+              .setStyle(TextInputStyle.Paragraph)
+              .setPlaceholder('Explain why this application was denied...')
+              .setRequired(true)
+              .setMaxLength(1000);
+
+            modal.addComponents(
+              new ActionRowBuilder().addComponents(reasonInput)
             );
 
-          const label =
-            appConfig
-              ? appConfig.label
-              : 'Application';
-
+            await interaction.showModal(modal);
+            return;
+          }
 
           /* =================================================
              GET ORIGINAL EMBED
           ================================================= */
 
-          const originalEmbed =
-            interaction.message
-              .embeds[0];
+          const originalEmbed = interaction.message.embeds[0];
 
           if (!originalEmbed) {
-
             return interaction.reply({
-              content:
-                '❌ Could not find the application embed.',
+              content: '❌ Could not find the application embed.',
               ephemeral: true,
             });
           }
 
-
           /* =================================================
-             UPDATE APPLICATION
+             ACCEPT APPLICATION
           ================================================= */
 
-          const updatedEmbed =
-            EmbedBuilder
-              .from(originalEmbed)
-              .setColor(
-                isAccept
-                  ? '#57F287'
-                  : '#ED4245'
-              )
-              .setFooter({
-                text:
-                  `${
-                    isAccept
-                      ? 'Accepted'
-                      : 'Denied'
-                  } by ${
-                    interaction.user.tag
-                  }`,
-              });
-
+          const updatedEmbed = EmbedBuilder
+            .from(originalEmbed)
+            .setColor('#57F287')
+            .setFooter({
+              text: `Accepted by ${interaction.user.tag}`,
+            });
 
           await interaction.update({
-            embeds: [
-              updatedEmbed,
-            ],
-
+            embeds: [updatedEmbed],
             components: [
-              buildDecisionRow(
-                applicantId,
-                appId,
-                true
-              ),
+              buildDecisionRow(applicantId, appId, true),
             ],
           });
 
+          clearApplied(applicantId, appId);
 
-          /* =================================================
-             CLEAR PENDING APPLICATION
-          ================================================= */
-
-          clearApplied(
-            applicantId,
-            appId
-          );
-
-
-          /* =================================================
-             DM APPLICANT
-          ================================================= */
-
-          const applicant =
-            await interaction.client.users
-              .fetch(applicantId)
-              .catch(() => null);
+          const applicant = await interaction.client.users
+            .fetch(applicantId)
+            .catch(() => null);
 
           if (applicant) {
-
-            await applicant
-              .send(
-                isAccept
-                  ? `🎉 Your **${label}** application in **${interaction.guild.name}** was accepted!`
-                  : `Your **${label}** application in **${interaction.guild.name}** was denied.`
-              )
-              .catch((err) => {
-
-                console.error(
-                  `Could not DM applicant ${applicantId}:`,
-                  err.message
-                );
-
-              });
+            await applicant.send(
+              `🎉 Your **${label}** application in **${interaction.guild.name}** was accepted!\n\n` +
+              `You have been accepted by **${interaction.user.tag}**.`
+            ).catch((err) => {
+              console.error(
+                `Could not DM applicant ${applicantId}:`,
+                err.message
+              );
+            });
           }
 
           return;
         }
+      }
+
+
+      /* =====================================================
+         APPLICATION DENY REASON MODAL
+      ===================================================== */
+
+      if (
+        interaction.isModalSubmit() &&
+        interaction.customId.startsWith('app_deny_reason_')
+      ) {
+        const rest = interaction.customId.replace('app_deny_reason_', '');
+        const separator = rest.indexOf('_');
+
+        if (separator === -1) {
+          return interaction.reply({
+            content: '❌ Invalid application denial modal.',
+            ephemeral: true,
+          });
+        }
+
+        const applicantId = rest.slice(0, separator);
+        const appId = rest.slice(separator + 1);
+
+        if (!interaction.member || !isSupport(interaction.member)) {
+          return interaction.reply({
+            content: 'Only staff can deny applications.',
+            ephemeral: true,
+          });
+        }
+
+        const appConfig = (config.applications || []).find(
+          (app) => String(app.id) === String(appId)
+        );
+
+        const label = appConfig ? appConfig.label : 'Application';
+
+        const reason = interaction.fields
+          .getTextInputValue('application_deny_reason')
+          .trim() || 'No reason provided.';
+
+        const originalEmbed = interaction.message.embeds[0];
+
+        if (!originalEmbed) {
+          return interaction.reply({
+            content: '❌ Could not find the application embed.',
+            ephemeral: true,
+          });
+        }
+
+        const updatedEmbed = EmbedBuilder
+          .from(originalEmbed)
+          .setColor('#ED4245')
+          .addFields({
+            name: 'Denial Reason',
+            value: reason.slice(0, 1024),
+            inline: false,
+          })
+          .setFooter({
+            text: `Denied by ${interaction.user.tag}`,
+          });
+
+        await interaction.update({
+          embeds: [updatedEmbed],
+          components: [
+            buildDecisionRow(applicantId, appId, true),
+          ],
+        });
+
+        clearApplied(applicantId, appId);
+
+        const applicant = await interaction.client.users
+          .fetch(applicantId)
+          .catch(() => null);
+
+        if (applicant) {
+          await applicant.send(
+            `Your **${label}** application in **${interaction.guild.name}** was denied.\n\n` +
+            `**Reason:** ${reason}\n\n` +
+            `If you believe this was a mistake, you may contact the staff team.`
+          ).catch((err) => {
+            console.error(
+              `Could not DM applicant ${applicantId}:`,
+              err.message
+            );
+          });
+        }
+
+        return;
       }
 
 
