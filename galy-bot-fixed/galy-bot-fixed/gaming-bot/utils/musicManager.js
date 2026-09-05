@@ -460,8 +460,6 @@ async function playTrack(guildId, track) {
         '--no-cache-dir',
         '--force-ipv4',
         ...cookiesArgs,
-        '--extractor-args',
-        'youtube:player_client=tv_embedded,ios,android_vr',
         '-f',
         'bestaudio/best',
         '-o',
