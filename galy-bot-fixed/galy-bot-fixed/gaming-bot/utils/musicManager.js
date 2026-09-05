@@ -108,6 +108,54 @@ async function getYoutube() {
   return youtubePromise;
 }
 
+async function ensureYtDlp() {
+  const binDir = path.join(__dirname, '..', 'bin');
+  const binaryName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+  const binaryPath = path.join(binDir, binaryName);
+
+  if (fs.existsSync(binaryPath)) {
+    return binaryPath;
+  }
+
+  fs.mkdirSync(binDir, { recursive: true });
+
+  const downloadUrl = process.platform === 'win32'
+    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+    : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+
+  console.log(`[MUSIC] Downloading yt-dlp from ${downloadUrl}`);
+
+  const response = await withTimeout(
+    fetch(downloadUrl, { redirect: 'follow' }),
+    30000,
+    'yt-dlp download timed out.'
+  );
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Could not download yt-dlp (${response.status}).`);
+  }
+
+  const tempPath = `${binaryPath}.tmp`;
+  const file = fs.createWriteStream(tempPath);
+
+  try {
+    for await (const chunk of Readable.fromWeb(response.body)) {
+      file.write(chunk);
+    }
+  } finally {
+    await new Promise(resolve => file.end(resolve));
+  }
+
+  fs.renameSync(tempPath, binaryPath);
+
+  if (process.platform !== 'win32') {
+    fs.chmodSync(binaryPath, 0o755);
+  }
+
+  console.log(`[MUSIC] yt-dlp ready: ${binaryPath}`);
+  return binaryPath;
+}
+
 function withTimeout(promise, ms, message) {
   return Promise.race([
     promise,
@@ -139,12 +187,18 @@ function createGuildPlayer(guildId) {
     playing: false,
     skipRequested: false,
     ffmpeg: null,
+    ytdlp: null,
     panelMessageId: config?.panelMessageId || null,
     panelChannelId: config?.controlChannelId || null,
   };
 
   player.on(AudioPlayerStatus.Idle, async () => {
     try {
+      if (state.ytdlp) {
+        try { state.ytdlp.kill('SIGKILL'); } catch {}
+        state.ytdlp = null;
+      }
+
       if (state.ffmpeg) {
         try {
           state.ffmpeg.kill('SIGKILL');
@@ -184,6 +238,11 @@ function createGuildPlayer(guildId) {
 
   player.on('error', async error => {
     console.error(`[MUSIC] Player error in ${guildId}:`, error);
+
+    if (state.ytdlp) {
+      try { state.ytdlp.kill('SIGKILL'); } catch {}
+      state.ytdlp = null;
+    }
 
     if (state.ffmpeg) {
       try {
@@ -338,35 +397,41 @@ async function playTrack(guildId, track) {
   if (!state || !track) return false;
 
   try {
-    console.log(`[MUSIC] Starting YouTube stream: ${track.title}`);
-
-    const youtube = await withTimeout(
-      getYoutube(),
-      15000,
-      'YouTube connection took too long to start.'
-    );
-
-    const webStream = await withTimeout(
-      youtube.download(track.videoId, {
-        type: 'audio',
-        quality: 'best',
-      }),
-      20000,
-      'YouTube audio took too long to load.'
-    );
-
-    if (!webStream) {
-      throw new Error('YouTube did not return an audio stream.');
-    }
-
-    const input =
-      typeof webStream.getReader === 'function'
-        ? Readable.fromWeb(webStream)
-        : webStream;
+    console.log(`[MUSIC] Starting yt-dlp stream: ${track.title}`);
 
     if (!ffmpegPath) {
       throw new Error('FFmpeg is not available.');
     }
+
+    const ytdlpPath = await ensureYtDlp();
+
+    const ytdlp = spawn(
+      ytdlpPath,
+      [
+        '--no-playlist',
+        '--quiet',
+        '--no-warnings',
+        '--no-progress',
+        '-f',
+        'bestaudio/best',
+        '-o',
+        '-',
+        '--',
+        track.url,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+
+    state.ytdlp = ytdlp;
+
+    let ytdlpError = '';
+    ytdlp.stderr.on('data', chunk => {
+      ytdlpError += chunk.toString();
+    });
+
+    ytdlp.on('error', error => {
+      console.error('[MUSIC] yt-dlp process error:', error);
+    });
 
     const ffmpeg = spawn(
       ffmpegPath,
@@ -385,9 +450,7 @@ async function playTrack(guildId, track) {
         '2',
         'pipe:1',
       ],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }
+      { stdio: ['pipe', 'pipe', 'pipe'] }
     );
 
     state.ffmpeg = ffmpeg;
@@ -401,20 +464,43 @@ async function playTrack(guildId, track) {
       console.error('[MUSIC] FFmpeg process error:', error);
     });
 
-    ffmpeg.on('close', code => {
+    ytdlp.stdout.pipe(ffmpeg.stdin);
+
+    ffmpeg.stdin.on('error', error => {
+      console.error('[MUSIC] FFmpeg stdin error:', error.message);
+    });
+
+    ytdlp.on('close', code => {
+      state.ytdlp = null;
+
       if (code !== 0 && code !== null) {
-        console.error('[MUSIC] FFmpeg exited with code', code, ffmpegError.trim());
+        console.error(
+          '[MUSIC] yt-dlp exited with code',
+          code,
+          ytdlpError.trim()
+        );
+
+        try {
+          ffmpeg.stdin.destroy(
+            new Error(
+              ytdlpError.trim() || `yt-dlp exited with code ${code}`
+            )
+          );
+        } catch {}
       }
     });
 
-    input.on('error', error => {
-      console.error('[MUSIC] YouTube stream error:', error);
-      try {
-        ffmpeg.kill('SIGKILL');
-      } catch {}
-    });
+    ffmpeg.on('close', code => {
+      state.ffmpeg = null;
 
-    input.pipe(ffmpeg.stdin);
+      if (code !== 0 && code !== null) {
+        console.error(
+          '[MUSIC] FFmpeg exited with code',
+          code,
+          ffmpegError.trim()
+        );
+      }
+    });
 
     const resource = createAudioResource(ffmpeg.stdout, {
       inputType: StreamType.Raw,
@@ -422,6 +508,8 @@ async function playTrack(guildId, track) {
       inlineVolume: false,
     });
 
+    // Set the state before play() so the panel immediately shows that a
+    // resource exists instead of remaining on Stopped while buffering.
     state.current = track;
     state.playing = true;
     state.paused = false;
@@ -429,17 +517,20 @@ async function playTrack(guildId, track) {
 
     state.player.play(resource);
 
-    console.log(`[MUSIC] Playing: ${track.title}`);
+    console.log(`[MUSIC] Player resource created: ${track.title}`);
     await updatePanel(guildId);
 
     return true;
   } catch (error) {
     console.error('[MUSIC] Failed to play track:', error);
 
+    if (state.ytdlp) {
+      try { state.ytdlp.kill('SIGKILL'); } catch {}
+      state.ytdlp = null;
+    }
+
     if (state.ffmpeg) {
-      try {
-        state.ffmpeg.kill('SIGKILL');
-      } catch {}
+      try { state.ffmpeg.kill('SIGKILL'); } catch {}
       state.ffmpeg = null;
     }
 
@@ -448,8 +539,6 @@ async function playTrack(guildId, track) {
     state.paused = false;
 
     await updatePanel(guildId);
-    await playNext(guildId);
-
     return false;
   }
 }
@@ -540,6 +629,11 @@ async function stop(guildId) {
   state.paused = false;
   state.skipRequested = false;
   state.loop = 'off';
+
+  if (state.ytdlp) {
+    try { state.ytdlp.kill('SIGKILL'); } catch {}
+    state.ytdlp = null;
+  }
 
   if (state.ffmpeg) {
     try {
