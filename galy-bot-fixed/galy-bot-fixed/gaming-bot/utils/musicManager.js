@@ -240,27 +240,32 @@ async function getTrackInfo(url) {
   }
 
   if (!play.yt_validate(url)) {
-    throw new Error(
-      'That is not a valid YouTube video URL.'
-    );
+    throw new Error('That is not a valid YouTube video URL.');
   }
 
-  const info = await play.video_basic_info(url);
+  // Do not call video_basic_info here.
+  // On some hosts/YouTube connections it can hang for a long time.
+  // We can start the audio stream directly and use the URL as a fallback title.
+  let title = 'YouTube video';
+  let author = 'YouTube';
+  let duration = 'Unknown';
+  let thumbnail = null;
+
+  try {
+    const parsed = new URL(url);
+    const videoId = parsed.searchParams.get('v') || null;
+
+    if (videoId) {
+      thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    }
+  } catch {}
 
   return {
     url,
-    title:
-      info.video_details?.title ||
-      'Unknown title',
-    duration:
-      info.video_details?.durationRaw ||
-      'Unknown',
-    thumbnail:
-      info.video_details?.thumbnails?.[0]?.url ||
-      null,
-    author:
-      info.video_details?.channel?.name ||
-      'Unknown',
+    title,
+    duration,
+    thumbnail,
+    author,
   };
 }
 
@@ -276,10 +281,18 @@ async function playTrack(guildId, track) {
       `[MUSIC] Starting stream: ${track.title}`
     );
 
-    const stream = await play.stream(track.url, {
-      quality: 2,
-      discordPlayerCompatibility: true,
-    });
+    const stream = await Promise.race([
+      play.stream(track.url, {
+        quality: 2,
+        discordPlayerCompatibility: true,
+      }),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error('YouTube audio took too long to load.')),
+          20_000
+        )
+      ),
+    ]);
 
     if (!stream || !stream.stream) {
       throw new Error(
@@ -363,7 +376,12 @@ async function addTrack(member, track) {
     state.player.state.status ===
       AudioPlayerStatus.Idle
   ) {
-    await playNext(guildId);
+    // Do not wait for YouTube to load here.
+    // This lets /play respond immediately instead of staying on
+    // "Void's Bot is thinking..." while play-dl is connecting.
+    playNext(guildId).catch(error => {
+      console.error('[MUSIC] Background play error:', error);
+    });
   } else {
     await updatePanel(guildId);
   }
