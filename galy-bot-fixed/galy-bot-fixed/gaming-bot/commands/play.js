@@ -19,50 +19,82 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const config = getConfig(interaction.guild.id);
+    const config = getConfig(
+      interaction.guild.id
+    );
 
-    if (!config?.voiceChannelId || !config?.controlChannelId) {
+    if (
+      !config?.voiceChannelId ||
+      !config?.controlChannelId
+    ) {
       await interaction.reply({
-        content: '❌ Music has not been set up yet. Use `/musicsetup` first.',
+        content:
+          '❌ Music has not been set up yet. Use `/musicsetup` first.',
         ephemeral: true,
       });
+
       return;
     }
 
     if (!interaction.member.voice.channel) {
       await interaction.reply({
-        content: '❌ You need to be in a voice channel first.',
+        content:
+          '❌ You need to be in a voice channel first.',
         ephemeral: true,
       });
+
       return;
     }
 
-    if (interaction.member.voice.channel.id !== config.voiceChannelId) {
+    if (
+      interaction.member.voice.channel.id !==
+      config.voiceChannelId
+    ) {
       await interaction.reply({
-        content: `❌ You need to be in <#${config.voiceChannelId}> to use the music player.`,
+        content:
+          `❌ You need to be in <#${config.voiceChannelId}> to use the music player.`,
         ephemeral: true,
       });
+
       return;
     }
 
-    const url = interaction.options.getString('url', true).trim();
+    const url =
+      interaction.options
+        .getString('url', true)
+        .trim();
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({
+      ephemeral: true,
+    });
 
     try {
-      const track = getTrackInfo(url);
+      const track =
+        await getTrackInfo(url);
 
-      await addTrack(interaction.member, track);
-      await updatePanel(interaction.guild.id);
+      await addTrack(
+        interaction.member,
+        track
+      );
+
+      await updatePanel(
+        interaction.guild.id
+      );
 
       await interaction.editReply(
         `🎵 Added **${track.title}** to the music player.`
       );
     } catch (error) {
-      console.error('[MUSIC] /play error:', error);
+      console.error(
+        '[MUSIC] /play error:',
+        error
+      );
 
       await interaction.editReply(
-        `❌ ${error.message || 'I could not play that URL.'}`
+        `❌ ${
+          error.message ||
+          'I could not play that URL.'
+        }`
       );
     }
   },
