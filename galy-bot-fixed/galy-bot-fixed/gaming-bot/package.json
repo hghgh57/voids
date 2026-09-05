@@ -11,9 +11,14 @@
   "dependencies": {
     "discord.js": "^14.15.3",
     "@discordjs/voice": "^0.19.2",
+    "@discordjs/opus": "^0.10.0",
+    "libsodium-wrappers": "^0.7.15",
     "youtubei.js": "^18.0.0",
     "ffmpeg-static": "^5.2.0",
     "dotenv": "^16.4.5",
     "tiktok-live-connector": "^1.2.3"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }
