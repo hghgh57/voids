@@ -68,6 +68,16 @@ module.exports = {
       });
     }
 
+    const oldMessages = await controlChannel.messages.fetch({
+      limit: 100,
+    });
+
+    for (const message of oldMessages.values()) {
+      if (message.author.id === interaction.client.user.id) {
+        await message.delete().catch(() => {});
+      }
+    }
+
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle("🎵 Void's Music")
@@ -148,9 +158,16 @@ module.exports = {
       panelMessageId: panel.id,
     });
 
-    createGuildPlayer(guild.id);
+    const state = createGuildPlayer(guild.id);
 
-    await setPanel(guild.id, controlChannel.id, panel.id);
+    state.panelChannelId = controlChannel.id;
+    state.panelMessageId = panel.id;
+
+    await setPanel(
+      guild.id,
+      controlChannel.id,
+      panel.id
+    );
 
     await interaction.editReply(
       `✅ Music system created!\n\n` +
