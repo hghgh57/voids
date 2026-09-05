@@ -19,15 +19,10 @@ const guildPlayers = new Map();
 
 function loadData() {
   try {
-    if (!fs.existsSync(DATA_FILE)) {
-      return {};
-    }
+    if (!fs.existsSync(DATA_FILE)) return {};
 
     const raw = fs.readFileSync(DATA_FILE, 'utf8').trim();
-
-    if (!raw) {
-      return {};
-    }
+    if (!raw) return {};
 
     return JSON.parse(raw);
   } catch (error) {
@@ -67,10 +62,7 @@ function getPlayer(guildId) {
 
 function createGuildPlayer(guildId) {
   const existing = guildPlayers.get(guildId);
-
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
 
   const config = getConfig(guildId);
 
@@ -101,6 +93,7 @@ function createGuildPlayer(guildId) {
         state.skipRequested = false;
         state.current = null;
         state.playing = false;
+        state.paused = false;
 
         await playNext(guildId);
         return;
@@ -132,11 +125,11 @@ function createGuildPlayer(guildId) {
     state.playing = false;
     state.paused = false;
 
+    await updatePanel(guildId);
     await playNext(guildId);
   });
 
   guildPlayers.set(guildId, state);
-
   return state;
 }
 
@@ -191,7 +184,7 @@ async function connectToVoice(member) {
       VoiceConnectionStatus.Ready,
       15_000
     );
-  } catch (error) {
+  } catch {
     try {
       connection.destroy();
     } catch {}
@@ -234,7 +227,7 @@ async function getOrCreateConnection(member, state) {
   return connection;
 }
 
-async function getTrackInfo(url) {
+function getTrackInfo(url) {
   if (!url || typeof url !== 'string') {
     throw new Error('Please provide a YouTube URL.');
   }
@@ -243,9 +236,6 @@ async function getTrackInfo(url) {
     throw new Error('That is not a valid YouTube video URL.');
   }
 
-  // Do not call video_basic_info here.
-  // On some hosts/YouTube connections it can hang for a long time.
-  // We can start the audio stream directly and use the URL as a fallback title.
   let title = 'YouTube video';
   let author = 'YouTube';
   let duration = 'Unknown';
@@ -253,10 +243,11 @@ async function getTrackInfo(url) {
 
   try {
     const parsed = new URL(url);
-    const videoId = parsed.searchParams.get('v') || null;
+    const videoId = parsed.searchParams.get('v');
 
     if (videoId) {
-      thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      thumbnail =
+        `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
     }
   } catch {}
 
@@ -269,6 +260,17 @@ async function getTrackInfo(url) {
   };
 }
 
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => {
+        reject(new Error(message));
+      }, ms)
+    ),
+  ]);
+}
+
 async function playTrack(guildId, track) {
   const state = guildPlayers.get(guildId);
 
@@ -278,21 +280,17 @@ async function playTrack(guildId, track) {
 
   try {
     console.log(
-      `[MUSIC] Starting stream: ${track.title}`
+      `[MUSIC] Loading audio for: ${track.url}`
     );
 
-    const stream = await Promise.race([
+    const stream = await withTimeout(
       play.stream(track.url, {
         quality: 2,
         discordPlayerCompatibility: true,
       }),
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error('YouTube audio took too long to load.')),
-          20_000
-        )
-      ),
-    ]);
+      20_000,
+      'YouTube audio took too long to load.'
+    );
 
     if (!stream || !stream.stream) {
       throw new Error(
@@ -305,7 +303,6 @@ async function playTrack(guildId, track) {
       {
         inputType: stream.type,
         metadata: track,
-        inlineVolume: false,
       }
     );
 
@@ -317,7 +314,7 @@ async function playTrack(guildId, track) {
     state.player.play(resource);
 
     console.log(
-      `[MUSIC] Playing: ${track.title}`
+      `[MUSIC] Audio player started: ${track.url}`
     );
 
     await updatePanel(guildId);
@@ -335,7 +332,9 @@ async function playTrack(guildId, track) {
 
     await updatePanel(guildId);
 
-    await playNext(guildId);
+    if (state.queue.length > 0) {
+      await playNext(guildId);
+    }
 
     return false;
   }
@@ -348,6 +347,10 @@ async function playNext(guildId) {
     return;
   }
 
+  if (state.current || state.playing) {
+    return;
+  }
+
   const next = state.queue.shift();
 
   if (!next) {
@@ -356,7 +359,6 @@ async function playNext(guildId) {
     state.paused = false;
 
     await updatePanel(guildId);
-
     return;
   }
 
@@ -371,19 +373,15 @@ async function addTrack(member, track) {
 
   state.queue.push(track);
 
-  if (
-    !state.playing &&
-    state.player.state.status ===
-      AudioPlayerStatus.Idle
-  ) {
-    // Do not wait for YouTube to load here.
-    // This lets /play respond immediately instead of staying on
-    // "Void's Bot is thinking..." while play-dl is connecting.
+  await updatePanel(guildId);
+
+  if (!state.playing && !state.current) {
     playNext(guildId).catch(error => {
-      console.error('[MUSIC] Background play error:', error);
+      console.error(
+        '[MUSIC] Background play error:',
+        error
+      );
     });
-  } else {
-    await updatePanel(guildId);
   }
 
   return state;
@@ -602,9 +600,7 @@ async function updatePanel(guildId) {
           .setCustomId('music_pause')
           .setLabel('Pause')
           .setEmoji('⏸️')
-          .setStyle(
-            ButtonStyle.Secondary
-          )
+          .setStyle(ButtonStyle.Secondary)
           .setDisabled(
             !state.current ||
             state.paused
@@ -614,9 +610,7 @@ async function updatePanel(guildId) {
           .setCustomId('music_resume')
           .setLabel('Resume')
           .setEmoji('▶️')
-          .setStyle(
-            ButtonStyle.Secondary
-          )
+          .setStyle(ButtonStyle.Secondary)
           .setDisabled(
             !state.current ||
             !state.paused
@@ -626,20 +620,14 @@ async function updatePanel(guildId) {
           .setCustomId('music_skip')
           .setLabel('Skip')
           .setEmoji('⏭️')
-          .setStyle(
-            ButtonStyle.Primary
-          )
-          .setDisabled(
-            !state.current
-          ),
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(!state.current),
 
         new ButtonBuilder()
           .setCustomId('music_stop')
           .setLabel('Stop')
           .setEmoji('⏹️')
-          .setStyle(
-            ButtonStyle.Danger
-          )
+          .setStyle(ButtonStyle.Danger)
           .setDisabled(
             !state.current &&
             !state.queue.length
@@ -652,17 +640,13 @@ async function updatePanel(guildId) {
           .setCustomId('music_loop')
           .setLabel(loopText)
           .setEmoji('🔁')
-          .setStyle(
-            ButtonStyle.Secondary
-          ),
+          .setStyle(ButtonStyle.Secondary),
 
         new ButtonBuilder()
           .setCustomId('music_queue')
           .setLabel('Queue')
           .setEmoji('📜')
-          .setStyle(
-            ButtonStyle.Secondary
-          )
+          .setStyle(ButtonStyle.Secondary)
       );
 
     await message.edit({
@@ -701,5 +685,4 @@ module.exports = {
   getQueue,
   setPanel,
   updatePanel,
-  setClient,
 };
