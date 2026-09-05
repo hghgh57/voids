@@ -1,0 +1,11 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.youtube.com	TRUE	/	FALSE	1823172112	HSID	Ax5NDGW_I4VqhsUGl
+.youtube.com	TRUE	/	TRUE	1823172112	SSID	AULyMJvyf_Q17L9eP
+.youtube.com	TRUE	/	FALSE	1823172112	APISID	CqfcZa_jk-39j7zh/A0YkFrN--1NuIu51Z
+.youtube.com	TRUE	/	TRUE	1823172112	SAPISID	gbXNIrkMKACSR3HG/Am2yxCsBCwkSr7atO
+.youtube.com	TRUE	/	TRUE	1823172112	__Secure-1PAPISID	gbXNIrkMKACSR3HG/Am2yxCsBCwkSr7atO
+.youtube.com	TRUE	/	TRUE	1823172112	__Secure-3PAPISID	gbXNIrkMKACSR3HG/Am2yxCsBCwkSr7atO
+.youtube.com	TRUE	/	TRUE	1818913272	LOGIN_INFO	AFmmF2swRgIhANCHhdFrf8ZP1z2NajUcKBQCI6XrquveAau_D88y-7wwAiEAkFbFD9n2GdAK08K1jXIeXBWBIHIGNZK4AmtfvvrYkVs:QUQ3MjNmenNYcVN
