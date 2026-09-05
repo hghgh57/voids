@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const play = require('play-dl');
+const { spawn } = require('child_process');
+const { Readable } = require('stream');
+const ffmpegPath = require('ffmpeg-static');
 
 const {
   joinVoiceChannel,
@@ -9,6 +11,7 @@ const {
   AudioPlayerStatus,
   NoSubscriberBehavior,
   VoiceConnectionStatus,
+  StreamType,
   entersState,
   getVoiceConnection,
 } = require('@discordjs/voice');
@@ -16,6 +19,7 @@ const {
 const DATA_FILE = path.join(__dirname, '..', 'data', 'music.json');
 
 const guildPlayers = new Map();
+let youtubePromise = null;
 
 function loadData() {
   try {
@@ -60,6 +64,59 @@ function getPlayer(guildId) {
   return guildPlayers.get(guildId) || null;
 }
 
+function getVideoId(url) {
+  try {
+    const parsed = new URL(url);
+
+    if (parsed.hostname === 'youtu.be') {
+      return parsed.pathname.slice(1).split('/')[0] || null;
+    }
+
+    if (parsed.hostname.includes('youtube.com')) {
+      if (parsed.pathname === '/watch') {
+        return parsed.searchParams.get('v');
+      }
+
+      if (parsed.pathname.startsWith('/shorts/')) {
+        return parsed.pathname.split('/')[2] || null;
+      }
+
+      if (parsed.pathname.startsWith('/embed/')) {
+        return parsed.pathname.split('/')[2] || null;
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+async function getYoutube() {
+  if (!youtubePromise) {
+    youtubePromise = import('youtubei.js')
+      .then(({ Innertube, UniversalCache }) =>
+        Innertube.create({
+          cache: new UniversalCache(false),
+          generate_session_locally: true,
+        })
+      )
+      .catch(error => {
+        youtubePromise = null;
+        throw error;
+      });
+  }
+
+  return youtubePromise;
+}
+
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]);
+}
+
 function createGuildPlayer(guildId) {
   const existing = guildPlayers.get(guildId);
   if (existing) return existing;
@@ -81,12 +138,20 @@ function createGuildPlayer(guildId) {
     loop: 'off',
     playing: false,
     skipRequested: false,
+    ffmpeg: null,
     panelMessageId: config?.panelMessageId || null,
     panelChannelId: config?.controlChannelId || null,
   };
 
   player.on(AudioPlayerStatus.Idle, async () => {
     try {
+      if (state.ffmpeg) {
+        try {
+          state.ffmpeg.kill('SIGKILL');
+        } catch {}
+        state.ffmpeg = null;
+      }
+
       const current = state.current;
 
       if (state.skipRequested) {
@@ -94,7 +159,6 @@ function createGuildPlayer(guildId) {
         state.current = null;
         state.playing = false;
         state.paused = false;
-
         await playNext(guildId);
         return;
       }
@@ -121,11 +185,17 @@ function createGuildPlayer(guildId) {
   player.on('error', async error => {
     console.error(`[MUSIC] Player error in ${guildId}:`, error);
 
+    if (state.ffmpeg) {
+      try {
+        state.ffmpeg.kill('SIGKILL');
+      } catch {}
+      state.ffmpeg = null;
+    }
+
     state.current = null;
     state.playing = false;
     state.paused = false;
 
-    await updatePanel(guildId);
     await playNext(guildId);
   });
 
@@ -153,12 +223,7 @@ async function connectToVoice(member) {
   if (existing) {
     try {
       if (existing.joinConfig.channelId === channel.id) {
-        await entersState(
-          existing,
-          VoiceConnectionStatus.Ready,
-          10_000
-        );
-
+        await entersState(existing, VoiceConnectionStatus.Ready, 10000);
         return existing;
       }
 
@@ -179,19 +244,13 @@ async function connectToVoice(member) {
   });
 
   try {
-    await entersState(
-      connection,
-      VoiceConnectionStatus.Ready,
-      15_000
-    );
+    await entersState(connection, VoiceConnectionStatus.Ready, 15000);
   } catch {
     try {
       connection.destroy();
     } catch {}
 
-    throw new Error(
-      'I could not connect to the voice channel.'
-    );
+    throw new Error('I could not connect to the voice channel.');
   }
 
   return connection;
@@ -215,7 +274,6 @@ async function getOrCreateConnection(member, state) {
 
     state.connection = existing;
     existing.subscribe(state.player);
-
     return existing;
   }
 
@@ -227,32 +285,46 @@ async function getOrCreateConnection(member, state) {
   return connection;
 }
 
-function getTrackInfo(url) {
+async function getTrackInfo(url) {
   if (!url || typeof url !== 'string') {
     throw new Error('Please provide a YouTube URL.');
   }
 
-  if (!play.yt_validate(url)) {
-    throw new Error('That is not a valid YouTube video URL.');
+  const videoId = getVideoId(url);
+
+  if (!videoId) {
+    throw new Error('Please provide a valid YouTube video URL.');
   }
 
   let title = 'YouTube video';
   let author = 'YouTube';
   let duration = 'Unknown';
-  let thumbnail = null;
+  let thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
   try {
-    const parsed = new URL(url);
-    const videoId = parsed.searchParams.get('v');
+    const youtube = await getYoutube();
+    const info = await withTimeout(
+      youtube.getBasicInfo(videoId),
+      12000,
+      'YouTube took too long to respond.'
+    );
 
-    if (videoId) {
-      thumbnail =
-        `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    title = info.basic_info?.title || title;
+    author = info.basic_info?.author || author;
+
+    const seconds = Number(info.basic_info?.duration || 0);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      const minutes = Math.floor(seconds / 60);
+      const secs = String(seconds % 60).padStart(2, '0');
+      duration = `${minutes}:${secs}`;
     }
-  } catch {}
+  } catch (error) {
+    console.warn('[MUSIC] Metadata lookup failed, continuing anyway:', error.message);
+  }
 
   return {
     url,
+    videoId,
     title,
     duration,
     thumbnail,
@@ -260,51 +332,95 @@ function getTrackInfo(url) {
   };
 }
 
-function withTimeout(promise, ms, message) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => {
-        reject(new Error(message));
-      }, ms)
-    ),
-  ]);
-}
-
 async function playTrack(guildId, track) {
   const state = guildPlayers.get(guildId);
 
-  if (!state || !track) {
-    return false;
-  }
+  if (!state || !track) return false;
 
   try {
-    console.log(
-      `[MUSIC] Loading audio for: ${track.url}`
+    console.log(`[MUSIC] Starting YouTube stream: ${track.title}`);
+
+    const youtube = await withTimeout(
+      getYoutube(),
+      15000,
+      'YouTube connection took too long to start.'
     );
 
-    const stream = await withTimeout(
-      play.stream(track.url, {
-        quality: 2,
-        discordPlayerCompatibility: true,
+    const webStream = await withTimeout(
+      youtube.download(track.videoId, {
+        type: 'audio',
+        quality: 'best',
       }),
-      20_000,
+      20000,
       'YouTube audio took too long to load.'
     );
 
-    if (!stream || !stream.stream) {
-      throw new Error(
-        'YouTube did not provide an audio stream.'
-      );
+    if (!webStream) {
+      throw new Error('YouTube did not return an audio stream.');
     }
 
-    const resource = createAudioResource(
-      stream.stream,
+    const input =
+      typeof webStream.getReader === 'function'
+        ? Readable.fromWeb(webStream)
+        : webStream;
+
+    if (!ffmpegPath) {
+      throw new Error('FFmpeg is not available.');
+    }
+
+    const ffmpeg = spawn(
+      ffmpegPath,
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-i',
+        'pipe:0',
+        '-vn',
+        '-f',
+        's16le',
+        '-ar',
+        '48000',
+        '-ac',
+        '2',
+        'pipe:1',
+      ],
       {
-        inputType: stream.type,
-        metadata: track,
+        stdio: ['pipe', 'pipe', 'pipe'],
       }
     );
+
+    state.ffmpeg = ffmpeg;
+
+    let ffmpegError = '';
+    ffmpeg.stderr.on('data', chunk => {
+      ffmpegError += chunk.toString();
+    });
+
+    ffmpeg.on('error', error => {
+      console.error('[MUSIC] FFmpeg process error:', error);
+    });
+
+    ffmpeg.on('close', code => {
+      if (code !== 0 && code !== null) {
+        console.error('[MUSIC] FFmpeg exited with code', code, ffmpegError.trim());
+      }
+    });
+
+    input.on('error', error => {
+      console.error('[MUSIC] YouTube stream error:', error);
+      try {
+        ffmpeg.kill('SIGKILL');
+      } catch {}
+    });
+
+    input.pipe(ffmpeg.stdin);
+
+    const resource = createAudioResource(ffmpeg.stdout, {
+      inputType: StreamType.Raw,
+      metadata: track,
+      inlineVolume: false,
+    });
 
     state.current = track;
     state.playing = true;
@@ -313,28 +429,26 @@ async function playTrack(guildId, track) {
 
     state.player.play(resource);
 
-    console.log(
-      `[MUSIC] Audio player started: ${track.url}`
-    );
-
+    console.log(`[MUSIC] Playing: ${track.title}`);
     await updatePanel(guildId);
 
     return true;
   } catch (error) {
-    console.error(
-      '[MUSIC] Failed to play track:',
-      error
-    );
+    console.error('[MUSIC] Failed to play track:', error);
+
+    if (state.ffmpeg) {
+      try {
+        state.ffmpeg.kill('SIGKILL');
+      } catch {}
+      state.ffmpeg = null;
+    }
 
     state.current = null;
     state.playing = false;
     state.paused = false;
 
     await updatePanel(guildId);
-
-    if (state.queue.length > 0) {
-      await playNext(guildId);
-    }
+    await playNext(guildId);
 
     return false;
   }
@@ -342,14 +456,7 @@ async function playTrack(guildId, track) {
 
 async function playNext(guildId) {
   const state = guildPlayers.get(guildId);
-
-  if (!state) {
-    return;
-  }
-
-  if (state.current || state.playing) {
-    return;
-  }
+  if (!state) return;
 
   const next = state.queue.shift();
 
@@ -357,7 +464,6 @@ async function playNext(guildId) {
     state.current = null;
     state.playing = false;
     state.paused = false;
-
     await updatePanel(guildId);
     return;
   }
@@ -373,15 +479,13 @@ async function addTrack(member, track) {
 
   state.queue.push(track);
 
-  await updatePanel(guildId);
-
-  if (!state.playing && !state.current) {
-    playNext(guildId).catch(error => {
-      console.error(
-        '[MUSIC] Background play error:',
-        error
-      );
-    });
+  if (
+    !state.playing &&
+    state.player.state.status === AudioPlayerStatus.Idle
+  ) {
+    await playNext(guildId);
+  } else {
+    await updatePanel(guildId);
   }
 
   return state;
@@ -389,10 +493,7 @@ async function addTrack(member, track) {
 
 async function pause(guildId) {
   const state = guildPlayers.get(guildId);
-
-  if (!state || !state.current) {
-    return false;
-  }
+  if (!state || !state.current) return false;
 
   const changed = state.player.pause();
 
@@ -406,10 +507,7 @@ async function pause(guildId) {
 
 async function resume(guildId) {
   const state = guildPlayers.get(guildId);
-
-  if (!state || !state.current) {
-    return false;
-  }
+  if (!state || !state.current) return false;
 
   const changed = state.player.unpause();
 
@@ -423,27 +521,18 @@ async function resume(guildId) {
 
 async function skip(guildId) {
   const state = guildPlayers.get(guildId);
-
-  if (!state || !state.current) {
-    return false;
-  }
+  if (!state || !state.current) return false;
 
   state.skipRequested = true;
   state.player.stop(true);
-
   return true;
 }
 
 async function stop(guildId) {
   const state = guildPlayers.get(guildId);
+  if (!state) return false;
 
-  if (!state) {
-    return false;
-  }
-
-  const hadMusic =
-    !!state.current ||
-    state.queue.length > 0;
+  const hadMusic = !!state.current || state.queue.length > 0;
 
   state.queue = [];
   state.current = null;
@@ -452,13 +541,18 @@ async function stop(guildId) {
   state.skipRequested = false;
   state.loop = 'off';
 
+  if (state.ffmpeg) {
+    try {
+      state.ffmpeg.kill('SIGKILL');
+    } catch {}
+    state.ffmpeg = null;
+  }
+
   try {
     state.player.stop(true);
   } catch {}
 
-  const connection =
-    getVoiceConnection(guildId);
-
+  const connection = getVoiceConnection(guildId);
   if (connection) {
     try {
       connection.destroy();
@@ -466,7 +560,6 @@ async function stop(guildId) {
   }
 
   state.connection = null;
-
   await updatePanel(guildId);
 
   return hadMusic;
@@ -474,10 +567,7 @@ async function stop(guildId) {
 
 async function toggleLoop(guildId) {
   const state = guildPlayers.get(guildId);
-
-  if (!state) {
-    return 'off';
-  }
+  if (!state) return 'off';
 
   if (state.loop === 'off') {
     state.loop = 'song';
@@ -488,21 +578,15 @@ async function toggleLoop(guildId) {
   }
 
   await updatePanel(guildId);
-
   return state.loop;
 }
 
 async function getQueue(guildId) {
   const state = guildPlayers.get(guildId);
-
   return state?.queue || [];
 }
 
-async function setPanel(
-  guildId,
-  channelId,
-  messageId
-) {
+async function setPanel(guildId, channelId, messageId) {
   const state = createGuildPlayer(guildId);
 
   state.panelChannelId = channelId;
@@ -528,19 +612,13 @@ async function updatePanel(guildId) {
   }
 
   try {
-    const channel =
-      await global.__voidMusicClient.channels.fetch(
-        state.panelChannelId
-      );
+    const channel = await global.__voidMusicClient.channels.fetch(
+      state.panelChannelId
+    );
 
-    if (!channel?.isTextBased()) {
-      return;
-    }
+    if (!channel?.isTextBased()) return;
 
-    const message =
-      await channel.messages.fetch(
-        state.panelMessageId
-      );
+    const message = await channel.messages.fetch(state.panelMessageId);
 
     const {
       EmbedBuilder,
@@ -568,99 +646,79 @@ async function updatePanel(guildId) {
           : 'Loop: Queue';
 
     const embed = new EmbedBuilder()
-      .setColor(0x5865F2)
+      .setColor(0x5865f2)
       .setTitle("🎵 Void's Music")
       .setDescription(description)
       .addFields(
         {
           name: 'Queue',
-          value:
-            `${state.queue.length} song(s) waiting`,
+          value: `${state.queue.length} song(s) waiting`,
           inline: true,
         },
         {
           name: 'Status',
-          value:
-            state.paused
-              ? '⏸️ Paused'
-              : state.current
-                ? '▶️ Playing'
-                : '⏹️ Stopped',
+          value: state.paused
+            ? '⏸️ Paused'
+            : state.current
+              ? '▶️ Playing'
+              : '⏹️ Stopped',
           inline: true,
         }
       )
       .setFooter({
-        text:
-          'Use the buttons below to control the music.',
+        text: 'Use the buttons below to control the music.',
       });
 
-    const row1 =
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('music_pause')
-          .setLabel('Pause')
-          .setEmoji('⏸️')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(
-            !state.current ||
-            state.paused
-          ),
+    const row1 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('music_pause')
+        .setLabel('Pause')
+        .setEmoji('⏸️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!state.current || state.paused),
 
-        new ButtonBuilder()
-          .setCustomId('music_resume')
-          .setLabel('Resume')
-          .setEmoji('▶️')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(
-            !state.current ||
-            !state.paused
-          ),
+      new ButtonBuilder()
+        .setCustomId('music_resume')
+        .setLabel('Resume')
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!state.current || !state.paused),
 
-        new ButtonBuilder()
-          .setCustomId('music_skip')
-          .setLabel('Skip')
-          .setEmoji('⏭️')
-          .setStyle(ButtonStyle.Primary)
-          .setDisabled(!state.current),
+      new ButtonBuilder()
+        .setCustomId('music_skip')
+        .setLabel('Skip')
+        .setEmoji('⏭️')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!state.current),
 
-        new ButtonBuilder()
-          .setCustomId('music_stop')
-          .setLabel('Stop')
-          .setEmoji('⏹️')
-          .setStyle(ButtonStyle.Danger)
-          .setDisabled(
-            !state.current &&
-            !state.queue.length
-          )
-      );
+      new ButtonBuilder()
+        .setCustomId('music_stop')
+        .setLabel('Stop')
+        .setEmoji('⏹️')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!state.current && !state.queue.length)
+    );
 
-    const row2 =
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('music_loop')
-          .setLabel(loopText)
-          .setEmoji('🔁')
-          .setStyle(ButtonStyle.Secondary),
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('music_loop')
+        .setLabel(loopText)
+        .setEmoji('🔁')
+        .setStyle(ButtonStyle.Secondary),
 
-        new ButtonBuilder()
-          .setCustomId('music_queue')
-          .setLabel('Queue')
-          .setEmoji('📜')
-          .setStyle(ButtonStyle.Secondary)
-      );
+      new ButtonBuilder()
+        .setCustomId('music_queue')
+        .setLabel('Queue')
+        .setEmoji('📜')
+        .setStyle(ButtonStyle.Secondary)
+    );
 
     await message.edit({
       embeds: [embed],
-      components: [
-        row1,
-        row2,
-      ],
+      components: [row1, row2],
     });
   } catch (error) {
-    console.error(
-      '[MUSIC] Failed to update panel:',
-      error
-    );
+    console.error('[MUSIC] Failed to update panel:', error);
   }
 }
 
@@ -685,4 +743,5 @@ module.exports = {
   getQueue,
   setPanel,
   updatePanel,
+  setClient,
 };
