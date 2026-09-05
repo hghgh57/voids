@@ -18,6 +18,39 @@ const {
 
 const DATA_FILE = path.join(__dirname, '..', 'data', 'music.json');
 
+// ============================================================
+// COOKIES SUPPORT (fixes "Sign in to confirm you're not a bot")
+// ============================================================
+// Put a YouTube cookies.txt file (Netscape format, exported from a
+// logged-in browser session) at one of these paths and yt-dlp will
+// use it automatically. Recommended: use a throwaway Google account,
+// not your main one, since the cookies file grants access to it.
+//
+// Easiest setup on Railway: add a variable COOKIES_FILE_PATH pointing
+// to wherever you upload/mount the file, OR just drop a file named
+// "cookies.txt" in the bot's data/ folder.
+// ============================================================
+const COOKIES_PATH =
+  process.env.COOKIES_FILE_PATH ||
+  path.join(__dirname, '..', 'data', 'cookies.txt');
+
+function getCookiesArgs() {
+  try {
+    if (fs.existsSync(COOKIES_PATH)) {
+      return ['--cookies', COOKIES_PATH];
+    }
+  } catch (error) {
+    console.warn('[MUSIC] Could not check cookies file:', error.message);
+  }
+
+  console.warn(
+    '[MUSIC] No cookies.txt found — YouTube may block playback with ' +
+    '"Sign in to confirm you\'re not a bot." See COOKIES_PATH in musicManager.js.'
+  );
+
+  return [];
+}
+
 const guildPlayers = new Map();
 let youtubePromise = null;
 
@@ -411,6 +444,7 @@ async function playTrack(guildId, track) {
     }
 
     const ytdlpPath = await ensureYtDlp();
+    const cookiesArgs = getCookiesArgs();
 
     // yt-dlp writes the selected audio stream directly to stdout.
     // The Linux executable used here is the standalone yt-dlp_linux build,
@@ -425,6 +459,7 @@ async function playTrack(guildId, track) {
         '--no-part',
         '--no-cache-dir',
         '--force-ipv4',
+        ...cookiesArgs,
         '--extractor-args',
         'youtube:player_client=tv_embedded,ios,android_vr',
         '-f',
