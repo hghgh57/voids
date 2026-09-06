@@ -20,7 +20,7 @@ module.exports = {
     .addRoleOption((option) =>
       option
         .setName('role')
-        .setDescription('The role that can see tickets created by this panel.')
+        .setDescription('The role that can see and handle tickets from this panel.')
         .setRequired(true)
     )
     .addStringOption((option) =>
@@ -36,13 +36,6 @@ module.exports = {
     const role = interaction.options.getRole('role');
     const title = interaction.options.getString('title');
 
-    if (!role) {
-      return interaction.reply({
-        content: '❌ Please select a valid role.',
-        ephemeral: true,
-      });
-    }
-
     const embed = new EmbedBuilder()
       .setDescription(description)
       .setColor('#5865F2');
@@ -57,8 +50,7 @@ module.exports = {
       .setEmoji('🎫')
       .setStyle(ButtonStyle.Primary);
 
-    const row = new ActionRowBuilder()
-      .addComponents(button);
+    const row = new ActionRowBuilder().addComponents(button);
 
     await interaction.channel.send({
       embeds: [embed],
@@ -66,7 +58,7 @@ module.exports = {
     });
 
     await interaction.reply({
-      content: `✅ Custom ticket panel sent. Tickets will use ${role} for access.`,
+      content: `✅ Custom ticket panel sent. Tickets will be visible to ${role}.`,
       ephemeral: true,
     });
   },
