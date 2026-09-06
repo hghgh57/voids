@@ -5,6 +5,8 @@ const {
   ActionRowBuilder,
   StringSelectMenuBuilder,
   EmbedBuilder,
+  PermissionsBitField,
+  ChannelType,
 } = require('discord.js');
 
 const {
@@ -13,6 +15,7 @@ const {
   closeTicket,
   finalizeCloseTicket,
   cancelCloseTicket,
+  buildTicketControlRow,
 } = require('../utils/ticketManager');
 
 const {
@@ -713,6 +716,149 @@ module.exports = {
       ===================================================== */
 
       if (interaction.isButton()) {
+
+        /* =================================================
+           CUSTOM TICKET PANEL
+
+           Format: custom_ticket_create_ROLEID
+           This is completely separate from the normal
+           ticket panel and does NOT use the normal support
+           category/role/question flow.
+        ================================================= */
+        if (interaction.customId.startsWith('custom_ticket_create:')) {
+          const customRoleId = interaction.customId.split(':')[1];
+
+          if (!customRoleId) {
+            return interaction.reply({
+              content: '❌ This ticket panel does not have a valid role configured.',
+              ephemeral: true,
+            });
+          }
+
+          const customRole = await interaction.guild.roles
+            .fetch(customRoleId)
+            .catch(() => null);
+
+          if (!customRole) {
+            return interaction.reply({
+              content: '❌ This ticket panel does not have a valid role configured.',
+              ephemeral: true,
+            });
+          }
+
+          const existing = interaction.guild.channels.cache.filter((channel) => {
+            if (!channel.topic || !channel.topic.startsWith('custom_ticket|')) return false;
+            const parts = channel.topic.split('|');
+            return parts[1] === interaction.user.id;
+          }).size;
+
+          if (existing >= (config.maxOpenTicketsPerUser || 2)) {
+            return interaction.reply({
+              content: `You already have ${existing} open ticket(s). Please close one before opening another.`,
+              ephemeral: true,
+            });
+          }
+
+          await interaction.deferReply({ ephemeral: true });
+
+          const permissionOverwrites = [
+            {
+              id: interaction.guild.roles.everyone.id,
+              deny: [PermissionsBitField.Flags.ViewChannel],
+            },
+            {
+              id: interaction.user.id,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+                PermissionsBitField.Flags.AttachFiles,
+                PermissionsBitField.Flags.EmbedLinks,
+              ],
+            },
+            {
+              id: customRole.id,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+                PermissionsBitField.Flags.ManageMessages,
+                PermissionsBitField.Flags.AttachFiles,
+                PermissionsBitField.Flags.EmbedLinks,
+              ],
+            },
+          ];
+
+          if (interaction.client.user) {
+            permissionOverwrites.push({
+              id: interaction.client.user.id,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+                PermissionsBitField.Flags.ManageChannels,
+                PermissionsBitField.Flags.ManageMessages,
+                PermissionsBitField.Flags.AttachFiles,
+                PermissionsBitField.Flags.EmbedLinks,
+              ],
+            });
+          }
+
+          const safeName =
+            interaction.user.username
+              .toLowerCase()
+              .replace(/[^a-z0-9]/g, '')
+              .slice(0, 20) || 'user';
+
+          const channelOptions = {
+            name: `custom-${safeName}`,
+            type: ChannelType.GuildText,
+            topic: `custom_ticket|${interaction.user.id}|${customRole.id}`,
+            permissionOverwrites,
+          };
+
+          const parentId = config.ticketCategoryId;
+          if (parentId && typeof parentId === 'string' && !parentId.startsWith('PUT_')) {
+            const parent = await interaction.guild.channels
+              .fetch(parentId)
+              .catch(() => null);
+
+            if (parent && parent.type === ChannelType.GuildCategory) {
+              channelOptions.parent = parent.id;
+            }
+          }
+
+          try {
+            const channel = await interaction.guild.channels.create(channelOptions);
+
+            const embed = new EmbedBuilder()
+              .setTitle('🎫 Ticket Created')
+              .setDescription(
+                `Hi ${interaction.user}, thanks for opening a ticket!\n\n` +
+                'Please explain what you need help with and a member of the team will assist you.'
+              )
+              .setColor(config.panel?.color || '#5865F2')
+              .setTimestamp();
+
+            await channel.send({
+              content: `${interaction.user} <@&${customRole.id}>`,
+              embeds: [embed],
+              components: [buildTicketControlRow()],
+            });
+
+            await interaction.editReply({
+              content: `✅ Your ticket has been created: ${channel}`,
+            });
+          } catch (err) {
+            console.error('[CUSTOM TICKET] Failed to create custom ticket:', err);
+
+            await interaction.editReply({
+              content: '❌ Something went wrong creating your ticket. Please contact staff.',
+            }).catch(() => {});
+          }
+
+          return;
+        }
 
         /* =================================================
            CUSTOM TICKET PANEL
