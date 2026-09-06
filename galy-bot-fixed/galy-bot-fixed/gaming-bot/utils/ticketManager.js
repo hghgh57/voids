@@ -998,3 +998,170 @@ async function finalizeCloseTicket(interaction) {
 
   if (!meta) {
     return interaction.reply({
+      content: 'This does not look like a ticket channel.',
+      ephemeral: true,
+    });
+  }
+
+  if (interaction.user.id !== meta.userId) {
+    return interaction.reply({
+      content: 'Only the person who opened this ticket can confirm the closure.',
+      ephemeral: true,
+    });
+  }
+
+  const pending = pendingTicketClosures.get(interaction.channel.id);
+
+  if (!pending) {
+    return interaction.reply({
+      content: 'There is no pending closure request for this ticket.',
+      ephemeral: true,
+    });
+  }
+
+  pendingTicketClosures.delete(interaction.channel.id);
+
+  await interaction.update({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle('🔒 Ticket Closing')
+        .setDescription(
+          `The ticket owner confirmed that the issue has been solved.\n\nClosed by ${interaction.user}.` +
+          (pending.reason ? `\n**Reason:** ${pending.reason}` : '')
+        )
+        .setColor('#ED4245')
+        .setFooter({
+          text: `This channel will be deleted in ${config.closeCountdownSeconds || 5} seconds.`,
+        }),
+    ],
+    components: [],
+  });
+
+  const closerId = pending.closerId || interaction.user.id;
+
+  incrementStat(
+    interaction.guild,
+    closerId,
+    'ticketsClosed'
+  ).catch((err) => {
+    console.error('Failed to update staff tracker for ticket close:', err);
+  });
+
+  if (meta.categoryId === 'partner') {
+    incrementStat(interaction.guild, closerId, 'partnersCompleted').catch(() => {});
+  } else if (meta.categoryId === 'giveaway_sponsor') {
+    incrementStat(interaction.guild, closerId, 'giveawaysSponsored').catch(() => {});
+  }
+
+  try {
+    const attachment = await buildTranscript(interaction.channel);
+    const logChannelId = config.transcriptLogChannelId;
+
+    if (logChannelId && !logChannelId.startsWith('PUT_')) {
+      const logChannel = await interaction.guild.channels
+        .fetch(logChannelId)
+        .catch(() => null);
+
+      if (logChannel && logChannel.isTextBased()) {
+        const logEmbed = new EmbedBuilder()
+          .setTitle('Ticket Closed')
+          .addFields(
+            { name: 'Channel', value: `#${interaction.channel.name}`, inline: true },
+            { name: 'Opened by', value: `<@${meta.userId}>`, inline: true },
+            { name: 'Closed by', value: `<@${closerId}>`, inline: true },
+            { name: 'Confirmed by', value: `${interaction.user}`, inline: true },
+            { name: 'Category', value: meta.categoryId, inline: true }
+          )
+          .setColor('#ED4245')
+          .setTimestamp();
+
+        if (pending.reason) {
+          logEmbed.addFields({
+            name: 'Reason',
+            value: pending.reason.slice(0, 1024),
+          });
+        }
+
+        await logChannel.send({
+          embeds: [logEmbed],
+          files: [attachment],
+        });
+      }
+    }
+
+    const opener = await interaction.guild.members
+      .fetch(meta.userId)
+      .catch(() => null);
+
+    if (opener) {
+      const dmAttachment = await buildTranscript(interaction.channel);
+      await opener.send({
+        content: 'Here is a transcript of your closed ticket.',
+        files: [dmAttachment],
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.error('Failed to build/send transcript:', err);
+  }
+
+  setTimeout(() => {
+    interaction.channel.delete().catch(() => {});
+  }, (config.closeCountdownSeconds || 5) * 1000);
+}
+
+async function cancelCloseTicket(interaction) {
+  const meta = parseTopic(interaction.channel.topic);
+
+  if (!meta) {
+    return interaction.reply({
+      content: 'This does not look like a ticket channel.',
+      ephemeral: true,
+    });
+  }
+
+  if (interaction.user.id !== meta.userId) {
+    return interaction.reply({
+      content: 'Only the person who opened this ticket can cancel the closure.',
+      ephemeral: true,
+    });
+  }
+
+  if (!pendingTicketClosures.has(interaction.channel.id)) {
+    return interaction.reply({
+      content: 'There is no pending closure request for this ticket.',
+      ephemeral: true,
+    });
+  }
+
+  pendingTicketClosures.delete(interaction.channel.id);
+
+  await interaction.update({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle('✅ Ticket Kept Open')
+        .setDescription(
+          `No problem, ${interaction.user}. Your ticket will remain open and staff can continue helping you.`
+        )
+        .setColor('#57F287'),
+    ],
+    components: [buildTicketControlRow(false)],
+  });
+}
+
+
+/* =========================================================
+   EXPORTS
+========================================================= */
+
+module.exports = {
+  createTicket,
+  createApplicationTicket,
+  claimTicket,
+  closeTicket,
+  finalizeCloseTicket,
+  cancelCloseTicket,
+  parseTopic,
+  buildTicketControlRow,
+  findCategory,
+  isServiceTicket,
+};
