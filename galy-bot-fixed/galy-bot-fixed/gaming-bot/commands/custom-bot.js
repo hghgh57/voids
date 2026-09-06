@@ -4,7 +4,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionFlagsBits,
 } = require('discord.js');
 
 module.exports = {
@@ -21,7 +20,7 @@ module.exports = {
     .addRoleOption((option) =>
       option
         .setName('role')
-        .setDescription('The role that can see the tickets created by this panel.')
+        .setDescription('The role that can see tickets created by this panel.')
         .setRequired(true)
     )
     .addStringOption((option) =>
