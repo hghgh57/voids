@@ -10,7 +10,6 @@ const {
 const {
   createTicket,
   claimTicket,
-  unclaimTicket,
   closeTicket,
   finalizeCloseTicket,
   cancelCloseTicket,
@@ -331,6 +330,7 @@ module.exports = {
               '❌ No ticket category was selected.',
             ephemeral: true,
           });
+
         }
 
         const category =
@@ -344,13 +344,10 @@ module.exports = {
             interaction.customId ===
             'ticket_category_select'
           ) {
-
             await resetTicketDropdown(
               interaction.message
             );
-
           } else {
-
             await resetServiceTicketDropdown(
               interaction.message
             );
@@ -377,7 +374,7 @@ module.exports = {
 
         /* =================================================
            RESET PANEL IMMEDIATELY
-
+           
            This is important because Discord select menus
            visually keep the selected value until the
            original message is edited.
@@ -580,7 +577,6 @@ module.exports = {
               String(appId)
           );
 
-
         /* =================================================
            INVALID APPLICATION
         ================================================= */
@@ -624,7 +620,7 @@ module.exports = {
 
         /* =================================================
            RESET APPLICATION PANEL
-
+           
            This happens BEFORE attempting the DM.
            Therefore the dropdown never gets stuck on the
            user's previous selection.
@@ -675,69 +671,6 @@ module.exports = {
 
 
       /* =====================================================
-         HONEYPOT INFO BUTTON
-      ===================================================== */
-
-      if (
-        interaction.isButton() &&
-        interaction.customId.startsWith(
-          'honeypot_info_'
-        )
-      ) {
-        const channelId =
-          interaction.customId.replace(
-            'honeypot_info_',
-            ''
-          );
-
-        const fs = require('fs');
-        const path = require('path');
-
-        const DATA_FILE = path.join(
-          __dirname,
-          '..',
-          'data',
-          'honeypots.json'
-        );
-
-        let data = {};
-
-        try {
-          if (fs.existsSync(DATA_FILE)) {
-            data = JSON.parse(
-              fs.readFileSync(
-                DATA_FILE,
-                'utf8'
-              )
-            );
-          }
-        } catch (error) {
-          console.error(
-            '[HONEYPOT] Failed to read data:',
-            error
-          );
-        }
-
-        const honeypot =
-          data[channelId];
-
-        const kicks = Number(
-          honeypot?.kicks || 0
-        );
-
-        await interaction.reply({
-          content:
-            `🍯 **Honeypot Information**\n\n` +
-            `This channel is a honeypot. Anyone who sends a message here is automatically kicked from the server.\n\n` +
-            `**Kicks so far:** ${kicks}`,
-          ephemeral: true,
-        });
-
-        return;
-      }
-
-
-      /* =====================================================
          BUTTONS
       ===================================================== */
 
@@ -745,61 +678,27 @@ module.exports = {
 
         /* =================================================
            SERVICE TICKET BUTTONS
-
            The /service-tickets command uses buttons with:
            service_ticket_open_<serviceId>
         ================================================= */
 
-        if (
-          interaction.customId.startsWith(
-            'service_ticket_open_'
-          )
-        ) {
+        if (interaction.customId.startsWith('service_ticket_open_')) {
+          const categoryId = interaction.customId.replace('service_ticket_open_', '');
+          const category = findTicketCategory(categoryId);
 
-          const categoryId =
-            interaction.customId.replace(
-              'service_ticket_open_',
-              ''
-            );
-
-          const category =
-            findTicketCategory(
-              categoryId
-            );
-
-          if (
-            !category ||
-            !(config.serviceCategories || [])
-              .some(
-                (c) =>
-                  c.id === categoryId
-              )
-          ) {
-
+          if (!category || !(config.serviceCategories || []).some((c) => c.id === categoryId)) {
             return interaction.reply({
-              content:
-                '❌ That service could not be found.',
+              content: '❌ That service could not be found.',
               ephemeral: true,
             });
           }
 
-          if (
-            Array.isArray(category.questions) &&
-            category.questions.length > 0
-          ) {
-
-            await interaction.showModal(
-              buildQuestionsModal(category)
-            );
-
+          if (Array.isArray(category.questions) && category.questions.length > 0) {
+            await interaction.showModal(buildQuestionsModal(category));
             return;
           }
 
-          await createTicket(
-            interaction,
-            categoryId
-          );
-
+          await createTicket(interaction, categoryId);
           return;
         }
 
@@ -897,7 +796,6 @@ module.exports = {
           const logChannelId =
             config.vouchLogChannelId;
 
-
           if (
             logChannelId &&
             !logChannelId.startsWith('PUT_')
@@ -920,14 +818,12 @@ module.exports = {
                         `${interaction.user.tag} (${interaction.user.id})`,
                       inline: true,
                     },
-
                     {
                       name: 'Requested by',
                       value:
                         `<@${requesterId}>`,
                       inline: true,
                     },
-
                     {
                       name: 'Category',
                       value:
@@ -938,12 +834,9 @@ module.exports = {
                   .setColor('#ED4245')
                   .setTimestamp();
 
-
               await logChannel
                 .send({
-                  embeds: [
-                    logEmbed,
-                  ],
+                  embeds: [logEmbed],
                 })
                 .catch(() => {});
             }
@@ -973,7 +866,6 @@ module.exports = {
             requesterId,
             optionValue,
           ] = rest.split('|');
-
 
           await interaction.update({
             embeds: [
@@ -1053,7 +945,9 @@ module.exports = {
 
           return;
         }
-                /* =================================================
+
+
+        /* =================================================
            GIVEAWAY JOIN
         ================================================= */
 
@@ -1103,741 +997,3 @@ module.exports = {
             giveaway.entrants.push(
               userId
             );
-
-            saveGiveaways(
-              giveaways
-            );
-
-            await interaction.reply({
-              content:
-                '🎉 You entered the giveaway!',
-              ephemeral: true,
-            });
-
-          } else {
-
-            giveaway.entrants.splice(
-              idx,
-              1
-            );
-
-            saveGiveaways(
-              giveaways
-            );
-
-            await interaction.reply({
-              content:
-                'You left the giveaway.',
-              ephemeral: true,
-            });
-          }
-
-          const updatedEmbed =
-            buildGiveawayEmbed(
-              giveaway.prize,
-              giveaway.endTimestamp,
-              giveaway.winnerCount,
-              giveaway.entrants.length
-            );
-
-          await interaction.message
-            .edit({
-              embeds: [
-                updatedEmbed,
-              ],
-            })
-            .catch(() => {});
-
-          return;
-        }
-
-
-        /* =================================================
-           REACTION ROLES
-        ================================================= */
-
-        if (
-          interaction.customId.startsWith(
-            'rr_'
-          )
-        ) {
-
-          const roleId =
-            interaction.customId.replace(
-              'rr_',
-              ''
-            );
-
-          const member =
-            interaction.member;
-
-          await interaction.deferReply({
-            ephemeral: true,
-          });
-
-          const role =
-            await interaction.guild.roles
-              .fetch(roleId)
-              .catch(() => null);
-
-          if (!role) {
-
-            return interaction.editReply({
-              content:
-                '❌ That role no longer exists.',
-            });
-          }
-
-          const configEntry =
-            (
-              config.reactionRoles?.roles ||
-              []
-            ).find(
-              (r) =>
-                r.roleId === roleId
-            );
-
-          const displayName =
-            configEntry?.label ||
-            role.name;
-
-
-          if (
-            member.roles.cache.has(
-              roleId
-            )
-          ) {
-
-            try {
-
-              await member.roles.remove(
-                roleId
-              );
-
-              await interaction.editReply({
-                content:
-                  `Removed the **${displayName}** role.`,
-              });
-
-            } catch (err) {
-
-              console.error(
-                `Failed to remove role ${roleId}:`,
-                err
-              );
-
-              await interaction.editReply({
-                content:
-                  `❌ I couldn't remove the **${displayName}** role — check that my bot role is above it.`,
-              });
-            }
-
-          } else {
-
-            try {
-
-              await member.roles.add(
-                roleId
-              );
-
-              await interaction.editReply({
-                content:
-                  `Gave you the **${displayName}** role!`,
-              });
-
-            } catch (err) {
-
-              console.error(
-                `Failed to add role ${roleId}:`,
-                err
-              );
-
-              await interaction.editReply({
-                content:
-                  `❌ I couldn't give you the **${displayName}** role — check that my bot role is above it.`,
-              });
-            }
-          }
-
-          return;
-        }
-
-
-        /* =================================================
-           TICKET CLAIM
-        ================================================= */
-
-        if (
-          interaction.customId ===
-          'ticket_claim'
-        ) {
-
-          await claimTicket(
-            interaction
-          );
-
-          return;
-        }
-
-
-        /* =================================================
-           TICKET UNCLAIM
-        ================================================= */
-
-        if (
-          interaction.customId ===
-          'ticket_unclaim'
-        ) {
-
-          await unclaimTicket(
-            interaction
-          );
-
-          return;
-        }
-
-
-        /* =================================================
-           TICKET CLOSE
-        ================================================= */
-
-        if (
-          interaction.customId ===
-          'ticket_close'
-        ) {
-
-          await closeTicket(
-            interaction,
-            null
-          );
-
-          return;
-        }
-
-
-        /* =================================================
-           TICKET CLOSE CONFIRMATION
-        ================================================= */
-
-        if (
-          interaction.customId ===
-          'ticket_close_confirm'
-        ) {
-
-          await finalizeCloseTicket(
-            interaction
-          );
-
-          return;
-        }
-
-
-        if (
-          interaction.customId ===
-          'ticket_close_cancel'
-        ) {
-
-          await cancelCloseTicket(
-            interaction
-          );
-
-          return;
-        }
-
-
-        /* =================================================
-           CLOSE WITH REASON
-        ================================================= */
-
-        if (
-          interaction.customId ===
-          'ticket_close_reason'
-        ) {
-
-          const modal =
-            new ModalBuilder()
-              .setCustomId(
-                'ticket_close_reason_modal'
-              )
-              .setTitle(
-                'Close Ticket'
-              );
-
-          const reasonInput =
-            new TextInputBuilder()
-              .setCustomId(
-                'close_reason_input'
-              )
-              .setLabel(
-                'Reason for closing'
-              )
-              .setStyle(
-                TextInputStyle.Paragraph
-              )
-              .setPlaceholder(
-                'e.g. Issue resolved'
-              )
-              .setRequired(true)
-              .setMaxLength(500);
-
-          modal.addComponents(
-            new ActionRowBuilder().addComponents(
-              reasonInput
-            )
-          );
-
-          await interaction.showModal(
-            modal
-          );
-
-          return;
-        }
-
-
-        /* =================================================
-           APPLICATION ACCEPT / DENY
-        ================================================= */
-
-        if (
-          interaction.customId.startsWith('app_accept_') ||
-          interaction.customId.startsWith('app_deny_')
-        ) {
-          const isAccept = interaction.customId.startsWith('app_accept_');
-          const prefix = isAccept ? 'app_accept_' : 'app_deny_';
-          const rest = interaction.customId.replace(prefix, '');
-          const separator = rest.indexOf('_');
-
-          if (separator === -1) {
-            return interaction.reply({
-              content: '❌ Invalid application button.',
-              ephemeral: true,
-            });
-          }
-
-          const applicantId = rest.slice(0, separator);
-          const appId = rest.slice(separator + 1);
-
-          if (!interaction.member || !isSupport(interaction.member)) {
-            return interaction.reply({
-              content: 'Only staff can accept or deny applications.',
-              ephemeral: true,
-            });
-          }
-
-          const appConfig = (config.applications || []).find(
-            (app) => String(app.id) === String(appId)
-          );
-
-          const label = appConfig ? appConfig.label : 'Application';
-
-          /* =================================================
-             DENY BUTTON - ASK FOR REASON
-          ================================================= */
-
-          if (!isAccept) {
-            const modal = new ModalBuilder()
-              .setCustomId(`app_deny_reason_${applicantId}_${appId}`)
-              .setTitle('Deny Application');
-
-            const reasonInput = new TextInputBuilder()
-              .setCustomId('application_deny_reason')
-              .setLabel('Reason for denial')
-              .setStyle(TextInputStyle.Paragraph)
-              .setPlaceholder('Explain why this application was denied...')
-              .setRequired(true)
-              .setMaxLength(1000);
-
-            modal.addComponents(
-              new ActionRowBuilder().addComponents(reasonInput)
-            );
-
-            await interaction.showModal(modal);
-            return;
-          }
-
-          /* =================================================
-             GET ORIGINAL EMBED
-          ================================================= */
-
-          const originalEmbed = interaction.message.embeds[0];
-
-          if (!originalEmbed) {
-            return interaction.reply({
-              content: '❌ Could not find the application embed.',
-              ephemeral: true,
-            });
-          }
-
-          /* =================================================
-             ACCEPT APPLICATION
-          ================================================= */
-
-          const updatedEmbed = EmbedBuilder
-            .from(originalEmbed)
-            .setColor('#57F287')
-            .setFooter({
-              text: `Accepted by ${interaction.user.tag}`,
-            });
-
-          await interaction.update({
-            embeds: [updatedEmbed],
-            components: [
-              buildDecisionRow(applicantId, appId, true),
-            ],
-          });
-
-          clearApplied(applicantId, appId);
-
-          const applicant = await interaction.client.users
-            .fetch(applicantId)
-            .catch(() => null);
-
-          if (applicant) {
-            await applicant.send(
-              `🎉 Your **${label}** application in **${interaction.guild.name}** was accepted!\n\n` +
-              `You have been accepted by **${interaction.user.tag}**.`
-            ).catch((err) => {
-              console.error(
-                `Could not DM applicant ${applicantId}:`,
-                err.message
-              );
-            });
-          }
-
-          return;
-        }
-      }
-
-
-      /* =====================================================
-         APPLICATION DENY REASON MODAL
-      ===================================================== */
-
-      if (
-        interaction.isModalSubmit() &&
-        interaction.customId.startsWith('app_deny_reason_')
-      ) {
-        const rest = interaction.customId.replace('app_deny_reason_', '');
-        const separator = rest.indexOf('_');
-
-        if (separator === -1) {
-          return interaction.reply({
-            content: '❌ Invalid application denial modal.',
-            ephemeral: true,
-          });
-        }
-
-        const applicantId = rest.slice(0, separator);
-        const appId = rest.slice(separator + 1);
-
-        if (!interaction.member || !isSupport(interaction.member)) {
-          return interaction.reply({
-            content: 'Only staff can deny applications.',
-            ephemeral: true,
-          });
-        }
-
-        const appConfig = (config.applications || []).find(
-          (app) => String(app.id) === String(appId)
-        );
-
-        const label = appConfig ? appConfig.label : 'Application';
-
-        const reason = interaction.fields
-          .getTextInputValue('application_deny_reason')
-          .trim() || 'No reason provided.';
-
-        const originalEmbed = interaction.message.embeds[0];
-
-        if (!originalEmbed) {
-          return interaction.reply({
-            content: '❌ Could not find the application embed.',
-            ephemeral: true,
-          });
-        }
-
-        const updatedEmbed = EmbedBuilder
-          .from(originalEmbed)
-          .setColor('#ED4245')
-          .addFields({
-            name: 'Denial Reason',
-            value: reason.slice(0, 1024),
-            inline: false,
-          })
-          .setFooter({
-            text: `Denied by ${interaction.user.tag}`,
-          });
-
-        await interaction.update({
-          embeds: [updatedEmbed],
-          components: [
-            buildDecisionRow(applicantId, appId, true),
-          ],
-        });
-
-        clearApplied(applicantId, appId);
-
-        const applicant = await interaction.client.users
-          .fetch(applicantId)
-          .catch(() => null);
-
-        if (applicant) {
-          await applicant.send(
-            `Your **${label}** application in **${interaction.guild.name}** was denied.\n\n` +
-            `**Reason:** ${reason}\n\n` +
-            `If you believe this was a mistake, you may contact the staff team.`
-          ).catch((err) => {
-            console.error(
-              `Could not DM applicant ${applicantId}:`,
-              err.message
-            );
-          });
-        }
-
-        return;
-      }
-
-
-      /* =====================================================
-         CLOSE REASON MODAL
-      ===================================================== */
-
-      if (
-        interaction.isModalSubmit() &&
-        interaction.customId ===
-          'ticket_close_reason_modal'
-      ) {
-
-        const reason =
-          interaction.fields
-            .getTextInputValue(
-              'close_reason_input'
-            );
-
-        await closeTicket(
-          interaction,
-          reason
-        );
-
-        return;
-      }
-
-
-      /* =====================================================
-         VOUCH COMMENT MODAL
-      ===================================================== */
-
-      if (
-        interaction.isModalSubmit() &&
-        interaction.customId.startsWith(
-          'vouch_comment_modal_'
-        )
-      ) {
-
-        const rest =
-          interaction.customId.replace(
-            'vouch_comment_modal_',
-            ''
-          );
-
-        const [
-          requesterId,
-          optionValue,
-          stars,
-        ] = rest.split('|');
-
-        const comment =
-          interaction.fields
-            .getTextInputValue(
-              'vouch_comment_input'
-            ) ||
-          'No comment left.';
-
-        const optionLabel =
-          OPTION_LABELS[
-            optionValue
-          ] ||
-          optionValue;
-
-        const starsNum =
-          parseInt(
-            stars,
-            10
-          );
-
-        const safeStars =
-          Math.max(
-            1,
-            Math.min(
-              5,
-              Number.isNaN(
-                starsNum
-              )
-                ? 5
-                : starsNum
-            )
-          );
-
-        const starDisplay =
-          '⭐'.repeat(
-            safeStars
-          ) +
-          '☆'.repeat(
-            5 - safeStars
-          );
-
-
-        await interaction.update({
-          embeds: [
-            new EmbedBuilder()
-              .setDescription(
-                '✅ Thanks for your vouch!'
-              )
-              .setColor(
-                '#57F287'
-              ),
-          ],
-
-          components: [],
-        });
-
-
-        const vouchChannelId =
-          config.vouchChannelId;
-
-
-        if (
-          vouchChannelId &&
-          !vouchChannelId.startsWith(
-            'PUT_'
-          )
-        ) {
-
-          const vouchChannel =
-            await interaction.client.channels
-              .fetch(
-                vouchChannelId
-              )
-              .catch(
-                () => null
-              );
-
-          if (vouchChannel) {
-
-            const requester =
-              await interaction.client.users
-                .fetch(
-                  requesterId
-                )
-                .catch(
-                  () => null
-                );
-
-            const vouchEmbed =
-              new EmbedBuilder()
-                .setTitle(
-                  '⭐ New Vouch'
-                )
-                .addFields(
-                  {
-                    name:
-                      'Vouch For',
-
-                    value:
-                      requester
-                        ? `${requester}`
-                        : `<@${requesterId}>`,
-
-                    inline: true,
-                  },
-
-                  {
-                    name:
-                      'From',
-
-                    value:
-                      `${interaction.user}`,
-
-                    inline: true,
-                  },
-
-                  {
-                    name:
-                      'Category',
-
-                    value:
-                      optionLabel,
-
-                    inline: true,
-                  },
-
-                  {
-                    name:
-                      'Rating',
-
-                    value:
-                      starDisplay,
-                  },
-
-                  {
-                    name:
-                      'Comment',
-
-                    value:
-                      comment,
-                  }
-                )
-                .setColor(
-                  '#FEE75C'
-                )
-                .setTimestamp();
-
-
-            await vouchChannel
-              .send({
-                embeds: [
-                  vouchEmbed,
-                ],
-              })
-              .catch(
-                () => {}
-              );
-          }
-        }
-
-        return;
-      }
-    } catch (err) {
-
-      console.error(
-        'Error handling interaction:',
-        err
-      );
-
-      try {
-
-        if (
-          interaction.deferred ||
-          interaction.replied
-        ) {
-
-          await interaction.followUp({
-            content:
-              '❌ Something went wrong handling that action.',
-            ephemeral: true,
-          });
-
-        } else {
-
-          await interaction.reply({
-            content:
-              '❌ Something went wrong handling that action.',
-            ephemeral: true,
-          });
-
-        }
-
-      } catch (_) {}
-    }
-  },
-};
