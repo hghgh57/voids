@@ -8,25 +8,12 @@ const {
 } = require('discord.js');
 
 const config = require('../config.json');
-
-const { buildTranscript } =
-  require('./transcript');
-
+const { buildTranscript } = require('./transcript');
 const {
   buildApplicationEmbed,
   buildDecisionRow,
-} =
-  require('./applicationManager');
-
-const {
-  incrementStat,
-} =
-  require('./staffTracker');
-
-const {
-  logTicketClose,
-} =
-  require('./logger');
+} = require('./applicationManager');
+const { incrementStat } = require('./staffTracker');
 
 
 /* =========================================================
@@ -34,25 +21,11 @@ const {
 ========================================================= */
 
 function parseTopic(topic) {
-  if (
-    !topic ||
-    !topic.startsWith('ticket|')
-  ) {
-    return null;
-  }
+  if (!topic || !topic.startsWith('ticket|')) return null;
 
-  const [
-    ,
-    userId,
-    categoryId,
-  ] = topic.split('|');
+  const [, userId, categoryId] = topic.split('|');
 
-  if (
-    !userId ||
-    !categoryId
-  ) {
-    return null;
-  }
+  if (!userId || !categoryId) return null;
 
   return {
     userId,
@@ -61,24 +34,12 @@ function parseTopic(topic) {
 }
 
 
-function countOpenTicketsForUser(
-  guild,
-  userId
-) {
-  return guild.channels.cache.filter(
-    (channel) => {
+function countOpenTicketsForUser(guild, userId) {
+  return guild.channels.cache.filter((channel) => {
+    const meta = parseTopic(channel.topic);
 
-      const meta =
-        parseTopic(
-          channel.topic
-        );
-
-      return (
-        meta &&
-        meta.userId === userId
-      );
-    }
-  ).size;
+    return meta && meta.userId === userId;
+  }).size;
 }
 
 
@@ -86,54 +47,27 @@ function countOpenTicketsForUser(
    TICKET BUTTONS
 ========================================================= */
 
-function buildTicketControlRow(
-  claimed = false
-) {
-  return new ActionRowBuilder()
-    .addComponents(
+function buildTicketControlRow(claimed = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_claim')
+      .setLabel(claimed ? 'Claimed' : 'Claim')
+      .setEmoji('🙋')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(claimed),
 
-      new ButtonBuilder()
-        .setCustomId(
-          claimed
-            ? 'ticket_unclaim'
-            : 'ticket_claim'
-        )
-        .setLabel(
-          claimed
-            ? 'Unclaim'
-            : 'Claim'
-        )
-        .setEmoji(
-          claimed
-            ? '<:Emojis_32x32_99:1545313741594304572>'
-            : '<:Emojis_32x32_295:1545313653719433246>'
-        )
-        .setStyle(
-          ButtonStyle.Secondary
-        ),
+    new ButtonBuilder()
+      .setCustomId('ticket_close')
+      .setLabel('Close')
+      .setEmoji('🔒')
+      .setStyle(ButtonStyle.Danger),
 
-      new ButtonBuilder()
-        .setCustomId(
-          'ticket_close'
-        )
-        .setLabel('Close')
-        .setEmoji('<:Emojis_32x32_95:1545306402715598879>')
-        .setStyle(
-          ButtonStyle.Danger
-        ),
-
-      new ButtonBuilder()
-        .setCustomId(
-          'ticket_close_reason'
-        )
-        .setLabel(
-          'Close with Reason'
-        )
-        .setEmoji('<:Emojis_32x32_91:1545306173001957426>')
-        .setStyle(
-          ButtonStyle.Secondary
-        )
-    );
+    new ButtonBuilder()
+      .setCustomId('ticket_close_reason')
+      .setLabel('Close with Reason')
+      .setEmoji('📝')
+      .setStyle(ButtonStyle.Secondary)
+  );
 }
 
 
@@ -142,9 +76,7 @@ function buildTicketControlRow(
 ========================================================= */
 
 function getTicketRoleIds() {
-  return (
-    config.ticketRoleIds || []
-  ).filter(
+  return (config.ticketRoleIds || []).filter(
     (id) =>
       id &&
       typeof id === 'string' &&
@@ -154,9 +86,7 @@ function getTicketRoleIds() {
 
 
 function getApplicationTicketRoleIds() {
-  return (
-    config.applicationTicketRoleIds || []
-  ).filter(
+  return (config.applicationTicketRoleIds || []).filter(
     (id) =>
       id &&
       typeof id === 'string' &&
@@ -166,17 +96,12 @@ function getApplicationTicketRoleIds() {
 
 
 function getServiceTicketRoleIds() {
-
-  const ids =
-    (
-      config.serviceTicketRoleIds ||
-      []
-    ).filter(
-      (id) =>
-        id &&
-        typeof id === 'string' &&
-        !id.startsWith('PUT_')
-    );
+  const ids = (config.serviceTicketRoleIds || []).filter(
+    (id) =>
+      id &&
+      typeof id === 'string' &&
+      !id.startsWith('PUT_')
+  );
 
   return ids.length
     ? ids
@@ -188,96 +113,70 @@ function getServiceTicketRoleIds() {
    CATEGORY HELPERS
 ========================================================= */
 
-function isApplicationTicket(
-  categoryId
-) {
-  return (
-    config.applications || []
-  ).some(
+function isApplicationTicket(categoryId) {
+  return (config.applications || []).some(
     (application) =>
-      String(application.id) ===
-      String(categoryId)
+      application.id === categoryId
   );
 }
 
 
-function isServiceTicket(
-  categoryId
-) {
-  return (
-    config.serviceCategories || []
-  ).some(
+function isServiceTicket(categoryId) {
+  return (config.serviceCategories || []).some(
     (category) =>
-      String(category.id) ===
-      String(categoryId)
+      category.id === categoryId
   );
 }
 
 
-function findCategory(
-  categoryId
-) {
+function findCategory(categoryId) {
   return (
-    (
-      config.categories || []
-    ).find(
+    (config.categories || []).find(
       (category) =>
-        String(category.id) ===
-        String(categoryId)
-    ) ||
+        category.id === categoryId
+    )
 
-    (
-      config.serviceCategories || []
-    ).find(
+    ||
+
+    (config.serviceCategories || []).find(
       (category) =>
-        String(category.id) ===
-        String(categoryId)
+        category.id === categoryId
     )
   );
 }
 
 
-function getRoleIdsForTicket(
-  categoryId
-) {
+function getRoleIdsForTicket(categoryId) {
+  const category = findCategory(categoryId);
 
-  const category =
-    findCategory(
-      categoryId
-    );
+  const categoryRoleIds = (
+    category?.roleIds || []
+  ).filter(
+    (id) =>
+      id &&
+      typeof id === 'string' &&
+      !id.startsWith('PUT_')
+  );
 
-  const categoryRoleIds =
-    (
-      category?.roleIds ||
-      []
-    ).filter(
-      (id) =>
-        id &&
-        typeof id === 'string' &&
-        !id.startsWith('PUT_')
-    );
+  /*
+    Service categories can have their own roles.
+    Example:
+    building_service -> builder role
+    digging_service -> digging role
+    regears_service -> regear role
+  */
 
-  if (
-    categoryRoleIds.length
-  ) {
+  if (categoryRoleIds.length) {
     return categoryRoleIds;
   }
 
 
-  if (
-    isApplicationTicket(
-      categoryId
-    )
-  ) {
+  if (isApplicationTicket(categoryId)) {
     return getApplicationTicketRoleIds();
   }
 
 
-  if (
-    isServiceTicket(
-      categoryId
-    )
-  ) {
+  if (isServiceTicket(categoryId)) {
     return getServiceTicketRoleIds();
   }
 
@@ -285,665 +184,6 @@ function getRoleIdsForTicket(
   return getTicketRoleIds();
 }
 
-
-/* =========================================================
-   GIVEAWAY CLAIM CHECK
-========================================================= */
-
-/*
- * Official GiveawayBot ID.
- *
- * IMPORTANT:
- * This is NOT Void's own giveaway system.
- */
-const OFFICIAL_GIVEAWAY_BOT_ID =
-  '294882584201003009';
-
-
-function isGiveawayClaimTicket(
-  categoryId
-) {
-  return (
-    String(categoryId) ===
-    'giveaway_claim'
-  );
-}
-
-function getGiveawayChannelIds() {
-  const ids =
-    config.giveawayCheckChannelIds ||
-    config.giveawayChannelIds ||
-    config.giveawayChannels ||
-    [];
-
-  if (!Array.isArray(ids)) {
-    return [];
-  }
-
-  return [
-    ...new Set(
-      ids.filter(
-        (id) =>
-          typeof id === 'string' &&
-          /^\d{17,20}$/.test(id)
-      )
-    ),
-  ];
-}
-
-function normaliseWinnerText(
-  value
-) {
-  return String(
-    value || ''
-  )
-    .toLowerCase()
-    .replace(
-      /[`*_~]/g,
-      ''
-    )
-    .replace(
-      /\s+/g,
-      ' '
-    )
-    .trim();
-}
-
-
-function getWinnerText(
-  message
-) {
-
-  const parts = [];
-
-  if (
-    message.content
-  ) {
-    parts.push(
-      message.content
-    );
-  }
-
-
-  for (
-    const embed of
-    message.embeds || []
-  ) {
-
-    if (
-      embed.title
-    ) {
-      parts.push(
-        embed.title
-      );
-    }
-
-    if (
-      embed.description
-    ) {
-      parts.push(
-        embed.description
-      );
-    }
-
-    if (
-      embed.footer?.text
-    ) {
-      parts.push(
-        embed.footer.text
-      );
-    }
-
-    if (
-      embed.author?.name
-    ) {
-      parts.push(
-        embed.author.name
-      );
-    }
-
-
-    for (
-      const field of
-      embed.fields || []
-    ) {
-
-      if (
-        field.name
-      ) {
-        parts.push(
-          field.name
-        );
-      }
-
-      if (
-        field.value
-      ) {
-        parts.push(
-          field.value
-        );
-      }
-    }
-  }
-
-  return parts.join('\n');
-}
-
-
-function messageContainsWinner(
-  message,
-  user
-) {
-
-  if (
-    !message ||
-    !user
-  ) {
-    return false;
-  }
-
-  const text =
-    getWinnerText(
-      message
-    );
-
-
-  /*
-   * First check Discord mentions
-   * and the raw user ID.
-   */
-  if (
-    text.includes(
-      `<@${user.id}>`
-    ) ||
-    text.includes(
-      `<@!${user.id}>`
-    ) ||
-    text.includes(
-      user.id
-    )
-  ) {
-    return true;
-  }
-
-
-  /*
-   * GiveawayBot can sometimes display
-   * usernames/display names.
-   */
-  const names = [
-    user.username,
-    user.globalName,
-    user.displayName,
-    user.tag,
-  ]
-    .filter(Boolean)
-    .map(
-      normaliseWinnerText
-    );
-
-
-  const normalised =
-    normaliseWinnerText(
-      text
-    );
-
-
-  return names.some(
-    (name) => {
-
-      if (!name) {
-        return false;
-      }
-
-      const escaped =
-        name.replace(
-          /[.*+?^${}()|[\]\\]/g,
-          '\\$&'
-        );
-
-      return new RegExp(
-        `(^|[^a-z0-9_])${escaped}(?![a-z0-9_])`,
-        'i'
-      ).test(
-        normalised
-      );
-    }
-  );
-}
-
-
-function isGiveawayWinnerMessage(
-  message
-) {
-
-  if (!message) {
-    return false;
-  }
-
-  const text =
-    getWinnerText(
-      message
-    ).toLowerCase();
-
-  return (
-    /congratulations/.test(text) ||
-    /winner/.test(text) ||
-    /winners/.test(text) ||
-    /you won/.test(text) ||
-    /giveaway ended/.test(text) ||
-    /ended/.test(text)
-  );
-}
-
-
-function extractGiveawayPrize(
-  message
-) {
-
-  for (
-    const embed of
-    message.embeds || []
-  ) {
-
-    for (
-      const field of
-      embed.fields || []
-    ) {
-
-      if (
-        /prize|reward/i.test(
-          field.name || ''
-        )
-      ) {
-
-        return String(
-          field.value ||
-          'Unknown prize'
-        )
-          .split('\n')[0]
-          .trim()
-          .slice(
-            0,
-            256
-          );
-      }
-    }
-
-
-    if (
-      embed.title
-    ) {
-
-      const title =
-        String(
-          embed.title
-        )
-          .replace(
-            /^🎉\s*/,
-            ''
-          )
-          .trim();
-
-      if (
-        title &&
-        !/giveaway ended|ended/i.test(
-          title
-        )
-      ) {
-        return title.slice(
-          0,
-          256
-        );
-      }
-    }
-
-
-    if (
-      embed.description
-    ) {
-
-      const match =
-        String(
-          embed.description
-        ).match(
-          /(?:prize|reward|giveaway)\s*[:\-]\s*([^\n]+)/i
-        );
-
-      if (
-        match?.[1]
-      ) {
-        return match[1]
-          .trim()
-          .slice(
-            0,
-            256
-          );
-      }
-    }
-  }
-
-
-  const content =
-    String(
-      message.content || ''
-    );
-
-
-  const match =
-    content.match(
-      /(?:prize|reward|giveaway(?:\s+for)?)\s*[:\-]?\s*([^\n]+)/i
-    );
-
-
-  return match?.[1]
-    ? match[1]
-        .trim()
-        .slice(
-          0,
-          256
-        )
-    : 'Unknown prize';
-}
-
-
-async function scanGiveawayChannel(
-  channel,
-  user,
-  maxMessages
-) {
-
-  let bestWin = null;
-
-  let before;
-
-  let scanned = 0;
-
-
-  while (
-    scanned <
-    maxMessages
-  ) {
-
-    const limit =
-      Math.min(
-        100,
-        maxMessages -
-          scanned
-      );
-
-
-    const options = {
-      limit,
-    };
-
-
-    if (
-      before
-    ) {
-      options.before =
-        before;
-    }
-
-
-    const messages =
-      await channel.messages
-        .fetch(
-          options
-        )
-        .catch(
-          (error) => {
-
-            console.error(
-              `[GIVEAWAY CLAIM] Failed to read #${channel.id}:`,
-              error
-            );
-
-            return null;
-          }
-        );
-
-
-    if (
-      !messages ||
-      !messages.size
-    ) {
-      break;
-    }
-
-
-    scanned +=
-      messages.size;
-
-
-    for (
-      const message of
-      messages.values()
-    ) {
-
-      if (
-        message.author?.id !==
-        OFFICIAL_GIVEAWAY_BOT_ID
-      ) {
-        continue;
-      }
-
-
-      if (
-        !isGiveawayWinnerMessage(
-          message
-        )
-      ) {
-        continue;
-      }
-
-
-      if (
-        !messageContainsWinner(
-          message,
-          user
-        )
-      ) {
-        continue;
-      }
-
-
-      const prize =
-        extractGiveawayPrize(
-          message
-        );
-
-
-      if (
-        !prize ||
-        /^unknown prize$/i.test(
-          prize
-        )
-      ) {
-        continue;
-      }
-
-
-      const win = {
-        messageId:
-          message.id,
-
-        channelId:
-          channel.id,
-
-        prize:
-          prize,
-
-        createdTimestamp:
-          message.createdTimestamp ||
-          0,
-      };
-
-
-      if (
-        !bestWin ||
-        win.createdTimestamp >
-          bestWin.createdTimestamp
-      ) {
-        bestWin =
-          win;
-      }
-    }
-
-
-    const oldest =
-      messages.last();
-
-
-    if (
-      !oldest ||
-      messages.size <
-        limit
-    ) {
-      break;
-    }
-
-
-    before =
-      oldest.id;
-  }
-
-
-  return bestWin
-    ? [bestWin]
-    : [];
-}
-
-async function findGiveawayWins(
-  client,
-  guild,
-  userId
-) {
-
-  const user =
-    await client.users
-      .fetch(
-        userId
-      )
-      .catch(
-        () => null
-      );
-
-
-  if (!user) {
-    return [];
-  }
-
-
-  const channelIds =
-    getGiveawayChannelIds();
-
-
-  if (
-    !channelIds.length
-  ) {
-
-    console.warn(
-      '[GIVEAWAY CLAIM] No giveawayChannelIds are configured in config.json.'
-    );
-
-    return [];
-  }
-
-
-  const maxMessages =
-    Math.max(
-      100,
-      Math.min(
-        Number(
-          config.giveawayScanMessageLimit ||
-          5000
-        ),
-        10000
-      )
-    );
-
-
-  let newestWin = null;
-
-
-  for (
-    const channelId of
-    channelIds
-  ) {
-
-    const channel =
-      await client.channels
-        .fetch(
-          channelId
-        )
-        .catch(
-          (error) => {
-
-            console.error(
-              `[GIVEAWAY CLAIM] Could not fetch channel ${channelId}:`,
-              error
-            );
-
-            return null;
-          }
-        );
-
-
-    if (!channel) {
-      continue;
-    }
-
-
-    if (
-      channel.guildId !==
-      guild.id
-    ) {
-
-      console.warn(
-        `[GIVEAWAY CLAIM] Ignoring #${channelId}; it is not in this server.`
-      );
-
-      continue;
-    }
-
-
-    if (
-      !channel.isTextBased()
-    ) {
-      continue;
-    }
-
-
-    const channelWins =
-      await scanGiveawayChannel(
-        channel,
-        user,
-        maxMessages
-      );
-
-
-    for (
-      const win of
-      channelWins
-    ) {
-
-      if (
-        !newestWin ||
-        win.createdTimestamp >
-          newestWin.createdTimestamp
-      ) {
-        newestWin =
-          win;
-      }
-    }
-  }
-
-
-  return newestWin
-    ? [newestWin]
-    : [];
-}
 
 /* =========================================================
    CREATE NORMAL / SERVICE TICKET
@@ -954,54 +194,36 @@ async function createTicket(
   categoryId,
   answers = []
 ) {
-
-  const {
-    guild,
-    user,
-  } = interaction;
-
+  const { guild, user } = interaction;
 
   if (!guild) {
-
     return interaction.reply({
-      content:
-        '❌ Tickets can only be created inside the server.',
+      content: '❌ Tickets can only be created inside the server.',
       ephemeral: true,
     });
   }
 
 
-  const category =
-    findCategory(
-      categoryId
-    );
-
+  const category = findCategory(categoryId);
 
   if (!category) {
-
     return interaction.reply({
-      content:
-        '❌ Unknown ticket category.',
+      content: '❌ Unknown ticket category.',
       ephemeral: true,
     });
   }
 
 
-  const existing =
-    countOpenTicketsForUser(
-      guild,
-      user.id
-    );
+  const existing = countOpenTicketsForUser(
+    guild,
+    user.id
+  );
 
 
   if (
     existing >=
-    (
-      config.maxOpenTicketsPerUser ||
-      2
-    )
+    (config.maxOpenTicketsPerUser || 2)
   ) {
-
     return interaction.reply({
       content:
         `You already have ${existing} open ticket(s). ` +
@@ -1017,10 +239,8 @@ async function createTicket(
 
 
   const permissionOverwrites = [
-
     {
-      id:
-        guild.roles.everyone.id,
+      id: guild.roles.everyone.id,
 
       deny: [
         PermissionsBitField.Flags.ViewChannel,
@@ -1028,8 +248,7 @@ async function createTicket(
     },
 
     {
-      id:
-        user.id,
+      id: user.id,
 
       allow: [
         PermissionsBitField.Flags.ViewChannel,
@@ -1042,14 +261,17 @@ async function createTicket(
   ];
 
 
-  if (
-    interaction.client.user
-  ) {
+  /*
+    Give the bot explicit access.
 
+    Use client.user.id instead of guild.members.me.id
+    because guild.members.me can occasionally be null/not
+    cached when the bot is starting.
+  */
+
+  if (interaction.client.user) {
     permissionOverwrites.push({
-
-      id:
-        interaction.client.user.id,
+      id: interaction.client.user.id,
 
       allow: [
         PermissionsBitField.Flags.ViewChannel,
@@ -1064,55 +286,13 @@ async function createTicket(
   }
 
 
-  /*
-   * Validate configured staff roles first.
-   *
-   * A deleted/incorrect role ID would otherwise make
-   * Discord reject the whole channel creation request.
-   */
-  const configuredStaffRoleIds =
-    getRoleIdsForTicket(
-      categoryId
-    );
+  const staffRoleIds =
+    getRoleIdsForTicket(categoryId);
 
 
-  const staffRoleIds = [];
-
-
-  for (
-    const roleId of
-    configuredStaffRoleIds
-  ) {
-
-    const role =
-      await guild.roles
-        .fetch(
-          roleId
-        )
-        .catch(
-          () => null
-        );
-
-
-    if (!role) {
-
-      console.warn(
-        `[TICKET] Ignoring invalid/missing staff role ${roleId} for category ${categoryId}.`
-      );
-
-      continue;
-    }
-
-
-    staffRoleIds.push(
-      role.id
-    );
-
-
+  for (const roleId of staffRoleIds) {
     permissionOverwrites.push({
-
-      id:
-        role.id,
+      id: roleId,
 
       allow: [
         PermissionsBitField.Flags.ViewChannel,
@@ -1129,25 +309,16 @@ async function createTicket(
   const safeName =
     user.username
       .toLowerCase()
-      .replace(
-        /[^a-z0-9]/g,
-        ''
-      )
-      .slice(
-        0,
-        20
-      )
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 20)
     ||
     'user';
 
 
   const channelOptions = {
+    name: `ticket-${safeName}`,
 
-    name:
-      `ticket-${safeName}`,
-
-    type:
-      ChannelType.GuildText,
+    type: ChannelType.GuildText,
 
     topic:
       `ticket|${user.id}|${categoryId}`,
@@ -1156,53 +327,34 @@ async function createTicket(
   };
 
 
-  const requestedParentId =
-    isServiceTicket(
-      categoryId
-    )
-      ? config.serviceTicketCategoryId
-      : config.ticketCategoryId;
+  /*
+    SERVICE TICKETS
 
+    building_service
+    digging_service
+    regears_service
 
-  if (
-    requestedParentId &&
-    typeof requestedParentId ===
-      'string' &&
-    !requestedParentId.startsWith(
-      'PUT_'
-    )
-  ) {
+    all go into:
+    config.serviceTicketCategoryId
+  */
 
-    const parent =
-      await guild.channels
-        .fetch(
-          requestedParentId
-        )
-        .catch(
-          () => null
-        );
+  const requestedParentId = isServiceTicket(categoryId)
+    ? config.serviceTicketCategoryId
+    : config.ticketCategoryId;
 
-
-    if (
-      parent &&
-      parent.type ===
-        ChannelType.GuildCategory
-    ) {
-
-      channelOptions.parent =
-        requestedParentId;
-
+  // Do not blindly pass a stale/non-category channel ID as parent.
+  // If it is invalid, Discord can reject channel creation completely.
+  if (requestedParentId && typeof requestedParentId === 'string' && !requestedParentId.startsWith('PUT_')) {
+    const parent = await guild.channels.fetch(requestedParentId).catch(() => null);
+    if (parent && parent.type === ChannelType.GuildCategory) {
+      channelOptions.parent = requestedParentId;
     } else {
-
-      console.warn(
-        `[TICKET] Configured parent ${requestedParentId} is not a valid category; creating at server root.`
-      );
+      console.warn(`[TICKET] Configured parent ${requestedParentId} is not a valid category; creating at server root.`);
     }
   }
 
 
   try {
-
     const channel =
       await guild.channels.create(
         channelOptions
@@ -1212,173 +364,38 @@ async function createTicket(
     const welcomeEmbed =
       new EmbedBuilder()
         .setTitle(
-          `${category.emoji || '<:Emojis_32x32_119:1545307274560540742>'} ${category.label}`
+          `${category.emoji || '🎫'} ${category.label}`
         )
         .setDescription(
           `Hi ${user}, thanks for reaching out!\n\n` +
+
           `**Category:** ${category.label}\n\n` +
-          'Provide as much detail as possible. ' +
+
+          'Please provide as much detail as possible. ' +
           'A member of our team will be with you shortly.'
         )
         .setColor(
           config.panel?.color ||
           '#5865F2'
         )
-        .setTimestamp()
-        .setFooter({
-          text:
-            `Ticket ID: ${channel.id} • ${new Date(channel.createdTimestamp).toLocaleDateString('en-AU')} ${new Date(channel.createdTimestamp).toLocaleTimeString('en-AU', {
-              hour: '2-digit',
-              minute: '2-digit'
-            })}`
-        });
+        .setTimestamp();
 
 
-    if (
-      answers.length
-    ) {
-
+    if (answers.length) {
       welcomeEmbed.addFields(
-        answers.map(
-          (answer) => ({
+        answers.map((answer) => ({
+          name:
+            String(
+              answer.question
+            ).slice(0, 256),
 
-            name:
-              String(
-                answer.question
-              ).slice(
-                0,
-                256
-              ),
-
-            value:
-              String(
-                answer.answer ||
-                'No answer'
-              ).slice(
-                0,
-                1024
-              ),
-          })
-        )
+          value:
+            String(
+              answer.answer ||
+              'No answer'
+            ).slice(0, 1024),
+        }))
       );
-    }
-
-
-    /*
-     * Giveaway claim verification.
-     *
-     * IMPORTANT:
-     * The scan is protected by its own try/catch.
-     * If GiveawayBot cannot be scanned, the ticket
-     * STILL gets created.
-     */
-    let giveawayWinButtons = [];
-
-
-    if (
-      String(categoryId) ===
-      'giveaway_claim'
-    ) {
-
-      let wins = [];
-
-
-      try {
-
-        wins =
-          await findGiveawayWins(
-            interaction.client,
-            guild,
-            user.id
-          );
-
-      } catch (error) {
-
-        console.error(
-          '[GIVEAWAY CLAIM] Win scan failed while creating ticket:',
-          error
-        );
-
-        wins = [];
-      }
-
-
-      if (
-        wins.length > 0
-      ) {
-
-        welcomeEmbed.addFields({
-
-          name:
-            '🎉 Giveaway Result',
-
-          value:
-            `✅ **Yes, you won ${
-              wins.length === 1
-                ? 'a giveaway'
-                : `${wins.length} giveaways`
-            }!**\n\n` +
-
-            wins
-              .slice(
-                0,
-                10
-              )
-              .map(
-                (win) =>
-                  `🎁 **${String(
-                    win.prize
-                  ).slice(
-                    0,
-                    100
-                  )}**`
-              )
-              .join(
-                '\n'
-              ),
-        });
-
-
-        giveawayWinButtons =
-          wins
-            .slice(
-              0,
-              5
-            )
-            .map(
-              (win, index) =>
-
-                new ButtonBuilder()
-
-                  .setLabel(
-                    wins.length === 1
-                      ? 'Jump to Win'
-                      : `Jump to Win ${index + 1}`
-                  )
-
-                  .setStyle(
-                    ButtonStyle.Link
-                  )
-
-                  .setURL(
-                    `https://discord.com/channels/${guild.id}/${win.channelId}/${win.messageId}`
-                  )
-
-                  .setEmoji('🔗')
-            );
-
-      } else {
-
-        welcomeEmbed.addFields({
-
-          name:
-            '🎉 Giveaway Result',
-
-          value:
-            '❌ **No, you did not win a giveaway found by the bot.**\n\n' +
-            'Staff can still check your claim manually if you believe this is incorrect.',
-        });
-      }
     }
 
 
@@ -1391,30 +408,7 @@ async function createTicket(
         .join(' ');
 
 
-    const ticketComponents = [
-
-      buildTicketControlRow(),
-
-    ];
-
-
-    if (
-      giveawayWinButtons.length > 0
-    ) {
-
-      ticketComponents.push(
-
-        new ActionRowBuilder()
-          .addComponents(
-            giveawayWinButtons
-          )
-
-      );
-    }
-
-
     await channel.send({
-
       content:
         `${user} ${mentions}`.trim(),
 
@@ -1422,30 +416,23 @@ async function createTicket(
         welcomeEmbed,
       ],
 
-      components:
-        ticketComponents,
-
+      components: [
+        buildTicketControlRow(),
+      ],
     });
 
 
-    const ticketOpenedEmbed = new EmbedBuilder()
-      .setColor('#57F287')
-      .setDescription(
-        `**<:Emojis_32x32_21:1545312105354362940> Ticket opened <:Emojis_32x32_119:1545307274560540742>**\n\n` +
-        `Head to ${channel}`
-      );
-
     await interaction.editReply({
-      embeds: [ticketOpenedEmbed],
+      content:
+        `✅ Your ticket has been created: ${channel}`,
     });
 
 
     return channel;
-
   }
 
-  catch (err) {
 
+  catch (err) {
     console.error(
       'Failed to create ticket:',
       err
@@ -1454,15 +441,11 @@ async function createTicket(
 
     await interaction
       .editReply({
-
         content:
           '❌ Something went wrong creating your ticket. ' +
           'Please contact staff.',
-
       })
-      .catch(
-        () => {}
-      );
+      .catch(() => {});
 
 
     return null;
@@ -1481,11 +464,8 @@ async function createApplicationTicket(
   appConfig,
   answers
 ) {
-
   try {
-
     if (!guild) {
-
       throw new Error(
         'Missing guild when creating application ticket.'
       );
@@ -1493,7 +473,6 @@ async function createApplicationTicket(
 
 
     if (!member) {
-
       throw new Error(
         'Missing member when creating application ticket.'
       );
@@ -1501,7 +480,6 @@ async function createApplicationTicket(
 
 
     if (!member.user) {
-
       throw new Error(
         'Missing member user when creating application ticket.'
       );
@@ -1509,7 +487,6 @@ async function createApplicationTicket(
 
 
     if (!appConfig) {
-
       throw new Error(
         'Missing application configuration.'
       );
@@ -1520,8 +497,16 @@ async function createApplicationTicket(
       member.user;
 
 
-    const permissionOverwrites = [
+    /*
+      Applications are staff-only tickets.
 
+      The applicant can see the channel so they can
+      see that their application exists.
+
+      Application staff roles can access it too.
+    */
+
+    const permissionOverwrites = [
       {
         id:
           guild.roles.everyone.id,
@@ -1546,13 +531,20 @@ async function createApplicationTicket(
     ];
 
 
+    /*
+      Explicit bot permissions.
+
+      This fixes the problem where the channel could
+      be created but the bot failed when trying to
+      send the application embed.
+    */
+
     const botId =
       guild.members.me?.id ||
       guild.client.user?.id;
 
 
     if (!botId) {
-
       throw new Error(
         'Could not determine bot user ID.'
       );
@@ -1560,9 +552,7 @@ async function createApplicationTicket(
 
 
     permissionOverwrites.push({
-
-      id:
-        botId,
+      id: botId,
 
       allow: [
         PermissionsBitField.Flags.ViewChannel,
@@ -1580,30 +570,16 @@ async function createApplicationTicket(
       getApplicationTicketRoleIds();
 
 
+    /*
+      Add configured application staff roles.
+    */
+
     for (
-      const roleId of
-      applicationRoleIds
+      const roleId
+      of applicationRoleIds
     ) {
-
-      const role =
-        await guild.roles
-          .fetch(
-            roleId
-          )
-          .catch(
-            () => null
-          );
-
-
-      if (!role) {
-        continue;
-      }
-
-
       permissionOverwrites.push({
-
-        id:
-          role.id,
+        id: roleId,
 
         allow: [
           PermissionsBitField.Flags.ViewChannel,
@@ -1617,47 +593,33 @@ async function createApplicationTicket(
     }
 
 
+    /*
+      Also allow the general support/admin roles.
+
+      This prevents your application channel from
+      being inaccessible if applicationTicketRoleIds
+      was changed or the application staff role does
+      not have the required channel access.
+    */
+
     const extraRoleIds = [
-
       ...(config.supportRoleIds || []),
-
       ...(config.adminRoleIds || []),
-
     ].filter(
       (roleId) =>
         roleId &&
         typeof roleId === 'string' &&
         !roleId.startsWith('PUT_') &&
-        !applicationRoleIds.includes(
-          roleId
-        )
+        !applicationRoleIds.includes(roleId)
     );
 
 
     for (
-      const roleId of
-      extraRoleIds
+      const roleId
+      of extraRoleIds
     ) {
-
-      const role =
-        await guild.roles
-          .fetch(
-            roleId
-          )
-          .catch(
-            () => null
-          );
-
-
-      if (!role) {
-        continue;
-      }
-
-
       permissionOverwrites.push({
-
-        id:
-          role.id,
+        id: roleId,
 
         allow: [
           PermissionsBitField.Flags.ViewChannel,
@@ -1672,20 +634,13 @@ async function createApplicationTicket(
     const safeName =
       user.username
         .toLowerCase()
-        .replace(
-          /[^a-z0-9]/g,
-          ''
-        )
-        .slice(
-          0,
-          20
-        )
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 20)
       ||
       'user';
 
 
     const channelOptions = {
-
       name:
         `app-${safeName}`,
 
@@ -1699,45 +654,40 @@ async function createApplicationTicket(
     };
 
 
+    /*
+      APPLICATION CATEGORY PRIORITY
+
+      1. reviewChannelId if it is actually a category
+      2. applicationTicketCategoryId
+      3. ticketCategoryId
+
+      Your config currently has:
+      applicationTicketCategoryId:
+      1533068861174452255
+
+      so the application will go there.
+    */
+
+    // Only use a parent ID if it actually points to a Discord category.
+    // A deleted channel, text channel ID, or stale config ID causes
+    // guild.channels.create() to fail and was the reason the DM flow could
+    // end with "I couldn't open a ticket". If the configured application
+    // parent is invalid, fall back to the normal ticket category when valid;
+    // otherwise create the application at the server root instead of failing.
     const candidateParentIds = [
-
       config.applicationTicketCategoryId,
-
       config.ticketCategoryId,
-
-    ].filter(
-      (id, index, arr) =>
-        id &&
-        typeof id === 'string' &&
-        !id.startsWith('PUT_') &&
-        arr.indexOf(id) === index
+    ].filter((id, index, arr) =>
+      id &&
+      typeof id === 'string' &&
+      !id.startsWith('PUT_') &&
+      arr.indexOf(id) === index
     );
 
-
-    for (
-      const candidateId of
-      candidateParentIds
-    ) {
-
-      const candidate =
-        await guild.channels
-          .fetch(
-            candidateId
-          )
-          .catch(
-            () => null
-          );
-
-
-      if (
-        candidate &&
-        candidate.type ===
-          ChannelType.GuildCategory
-      ) {
-
-        channelOptions.parent =
-          candidateId;
-
+    for (const candidateId of candidateParentIds) {
+      const candidate = await guild.channels.fetch(candidateId).catch(() => null);
+      if (candidate && candidate.type === ChannelType.GuildCategory) {
+        channelOptions.parent = candidateId;
         break;
       }
     }
@@ -1746,15 +696,11 @@ async function createApplicationTicket(
     console.log(
       '[APPLICATION] Creating application ticket:',
       {
-        userId:
-          user.id,
-
+        userId: user.id,
         appId,
-
         parentId:
           channelOptions.parent ||
           'none',
-
         roles:
           applicationRoleIds,
       }
@@ -1766,6 +712,14 @@ async function createApplicationTicket(
         channelOptions
       );
 
+
+    /*
+      Build the application embed.
+
+      buildApplicationEmbed can throw if Discord
+      rejects one of the fields, so keep everything
+      inside this try block.
+    */
 
     const embed =
       buildApplicationEmbed(
@@ -1792,7 +746,6 @@ async function createApplicationTicket(
 
 
     await channel.send({
-
       content:
         `${user} ${mentions}`.trim(),
 
@@ -1807,11 +760,9 @@ async function createApplicationTicket(
 
 
     await channel.send({
-
       components: [
         buildTicketControlRow(),
       ],
-
     });
 
 
@@ -1821,11 +772,10 @@ async function createApplicationTicket(
 
 
     return channel;
-
   }
 
-  catch (err) {
 
+  catch (err) {
     console.error(
       '[APPLICATION] Failed to create application ticket:',
       err
@@ -1843,425 +793,113 @@ async function createApplicationTicket(
 async function claimTicket(
   interaction
 ) {
-
-  const meta =
-    parseTopic(
-      interaction.channel.topic
-    );
-
+  const meta = parseTopic(interaction.channel.topic);
 
   if (!meta) {
-
     return interaction.reply({
-
-      content:
-        'This does not look like a ticket channel.',
-
+      content: 'This does not look like a ticket channel.',
       ephemeral: true,
-
     });
   }
 
+  const member = interaction.member;
 
-  const member =
-    interaction.member;
+  let roleIds = getRoleIdsForTicket(meta.categoryId);
 
-
-  let roleIds =
-    getRoleIdsForTicket(
-      meta.categoryId
-    );
-
-
-  if (
-    meta.categoryId.startsWith(
-      'application_'
-    )
-  ) {
-
-    roleIds =
-      getApplicationTicketRoleIds();
+  if (meta.categoryId.startsWith('application_')) {
+    roleIds = getApplicationTicketRoleIds();
   }
 
-
-  const isTicketStaff =
-    roleIds.some(
-      (roleId) =>
-        member.roles.cache.has(
-          roleId
-        )
-    );
-
+  const isTicketStaff = roleIds.some((roleId) =>
+    member.roles.cache.has(roleId)
+  );
 
   if (
     !isTicketStaff &&
-    !member.permissions.has(
-      PermissionsBitField.Flags.ManageChannels
-    )
+    !member.permissions.has(PermissionsBitField.Flags.ManageChannels)
   ) {
-
     return interaction.reply({
-
-      content:
-        'Only ticket staff can claim tickets.',
-
+      content: 'Only ticket staff can claim tickets.',
       ephemeral: true,
-
     });
   }
 
+  // Prevent claiming an already claimed ticket.
+  const claimButton = interaction.message.components
+    .flatMap((row) => row.components)
+    .find((component) => component.customId === 'ticket_claim');
 
-  const claimButton =
-    interaction.message.components
-      .flatMap(
-        (row) =>
-          row.components
-      )
-      .find(
-        (component) =>
-          component.customId ===
-          'ticket_claim'
-      );
-
-
-  if (
-    claimButton?.disabled
-  ) {
-
+  if (claimButton?.disabled) {
     return interaction.reply({
-
-      content:
-        'This ticket has already been claimed.',
-
+      content: 'This ticket has already been claimed.',
       ephemeral: true,
-
     });
   }
 
-
-  for (
-    const roleId of
-    roleIds
-  ) {
-
-    const role =
-      await interaction.guild.roles
-        .fetch(
-          roleId
-        )
-        .catch(
-          () => null
-        );
-
+  /*
+   * Hide the ticket from the other staff roles.
+   * The ticket owner and the staff member who claimed it
+   * keep access. Discord administrators can still see it
+   * because Administrator bypasses channel permission denies.
+   */
+  for (const roleId of roleIds) {
+    const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
 
     if (!role) {
+      console.warn(`[TICKET] Could not fetch staff role ${roleId} while claiming.`);
       continue;
     }
 
-
-    await interaction.channel
-      .permissionOverwrites
-      .edit(
-        role,
-        {
-          ViewChannel: false,
-          SendMessages: false,
-          ReadMessageHistory: false,
-        }
-      )
-      .catch(
-        () => {}
-      );
+    await interaction.channel.permissionOverwrites.edit(role, {
+      ViewChannel: false,
+      SendMessages: false,
+      ReadMessageHistory: false,
+    }).catch((err) => {
+      console.error(`[TICKET] Failed to hide ticket from role ${roleId}:`, err);
+    });
   }
 
+  // Explicitly restore access for the ticket owner and claimer.
+  await interaction.channel.permissionOverwrites.edit(meta.userId, {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    AttachFiles: true,
+    EmbedLinks: true,
+  }).catch(() => {});
 
-  await interaction.channel
-    .permissionOverwrites
-    .edit(
-      meta.userId,
-      {
-        ViewChannel: true,
-        SendMessages: true,
-        ReadMessageHistory: true,
-        AttachFiles: true,
-        EmbedLinks: true,
-      }
+  await interaction.channel.permissionOverwrites.edit(interaction.user.id, {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    AttachFiles: true,
+    EmbedLinks: true,
+    ManageMessages: true,
+  }).catch(() => {});
+
+  const embed = new EmbedBuilder()
+    .setTitle('🙋 Ticket Claimed')
+    .setDescription(
+      `This ticket has been claimed by ${interaction.user}.\n\n` +
+      'Other ticket staff can no longer see this ticket.'
     )
-    .catch(
-      () => {}
-    );
+    .setColor('#57F287');
 
+  await interaction.reply({ embeds: [embed] });
 
-  await interaction.channel
-    .permissionOverwrites
-    .edit(
-      interaction.user.id,
-      {
-        ViewChannel: true,
-        SendMessages: true,
-        ReadMessageHistory: true,
-        AttachFiles: true,
-        EmbedLinks: true,
-        ManageMessages: true,
-      }
-    )
-    .catch(
-      () => {}
-    );
+  const disabledRow = buildTicketControlRow(true);
 
-
-  const embed =
-    new EmbedBuilder()
-      .setTitle(
-        '🙋 Ticket Claimed'
-      )
-      .setDescription(
-        `This ticket has been claimed by ${interaction.user}.\n\n` +
-        'Other ticket staff can no longer see this ticket.'
-      )
-      .setColor(
-        '#57F287'
-      );
-
-
-  await interaction.reply({
-    embeds: [
-      embed,
-    ],
-  });
-
-
-  const disabledRow =
-    buildTicketControlRow(
-      true
-    );
-
-
-  await interaction.message
-    .edit({
-      components: [
-        disabledRow,
-      ],
-    })
-    .catch(
-      () => {}
-    );
-
+  await interaction.message.edit({
+    components: [disabledRow],
+  }).catch(() => {});
 
   incrementStat(
     interaction.guild,
     interaction.user.id,
     'ticketsHandled'
-  ).catch(
-    (err) => {
-
-      console.error(
-        'Failed to update ticket stats:',
-        err
-      );
-    }
-  );
-}
-
-
-/* =========================================================
-   UNCLAIM TICKET
-========================================================= */
-
-async function unclaimTicket(
-  interaction
-) {
-
-  const meta =
-    parseTopic(
-      interaction.channel.topic
-    );
-
-  if (!meta) {
-    return interaction.reply({
-      content:
-        'This does not look like a ticket channel.',
-      ephemeral: true,
-    });
-  }
-
-  const member =
-    interaction.member;
-
-  let roleIds =
-    getRoleIdsForTicket(
-      meta.categoryId
-    );
-
-  if (
-    meta.categoryId.startsWith(
-      'application_'
-    )
-  ) {
-    roleIds =
-      getApplicationTicketRoleIds();
-  }
-
-  /*
-   * The claimer is identified by the user overwrite
-   * that has ManageMessages enabled. This prevents a
-   * different staff member from unclaiming the ticket.
-   */
-  const claimerOverwrite =
-    interaction.channel.permissionOverwrites.cache.get(
-      interaction.user.id
-    );
-
-  const isClaimer =
-    claimerOverwrite?.allow.has(
-      PermissionsBitField.Flags.ManageMessages
-    );
-
-  if (!isClaimer) {
-    return interaction.reply({
-      content:
-        '❌ Only the staff member who claimed this ticket can unclaim it.',
-      ephemeral: true,
-    });
-  }
-
-  /*
-   * Acknowledge immediately so Discord does not show
-   * "This interaction failed" if permission edits take
-   * more than three seconds.
-   */
-  await interaction.deferUpdate();
-
-  /*
-   * Restore the ticket staff roles to their normal
-   * ticket permissions.
-   */
-  for (
-    const roleId of roleIds
-  ) {
-
-    const role =
-      await interaction.guild.roles
-        .fetch(roleId)
-        .catch(
-          () => null
-        );
-
-    if (!role) {
-      continue;
-    }
-
-    await interaction.channel
-      .permissionOverwrites
-      .edit(
-        role,
-        {
-          ViewChannel: true,
-          SendMessages: true,
-          ReadMessageHistory: true,
-          ManageMessages: true,
-          AttachFiles: true,
-          EmbedLinks: true,
-        }
-      )
-      .catch(
-        (err) => {
-          console.error(
-            `Failed to restore ticket role ${roleId}:`,
-            err
-          );
-        }
-      );
-  }
-
-  /*
-   * Keep the ticket opener's access.
-   * If the opener is also the person who claimed the
-   * ticket, do NOT delete their overwrite because that
-   * would remove their access completely.
-   */
-  if (
-    interaction.user.id ===
-    meta.userId
-  ) {
-
-    await interaction.channel
-      .permissionOverwrites
-      .edit(
-        meta.userId,
-        {
-          ViewChannel: true,
-          SendMessages: true,
-          ReadMessageHistory: true,
-          AttachFiles: true,
-          EmbedLinks: true,
-          ManageMessages: false,
-        }
-      )
-      .catch(
-        (err) => {
-          console.error(
-            'Failed to restore ticket opener permissions:',
-            err
-          );
-        }
-      );
-
-  } else {
-
-    await interaction.channel
-      .permissionOverwrites
-      .delete(
-        interaction.user.id
-      )
-      .catch(
-        (err) => {
-          console.error(
-            'Failed to remove claimer permissions:',
-            err
-          );
-        }
-      );
-  }
-
-  const embed =
-    new EmbedBuilder()
-      .setTitle(
-        '↩️ Ticket Unclaimed'
-      )
-      .setDescription(
-        `This ticket has been unclaimed by ${interaction.user}.\n\n` +
-        'Ticket staff can see and handle this ticket again.'
-      )
-      .setColor(
-        '#5865F2'
-      );
-
-  const claimRow =
-    buildTicketControlRow(
-      false
-    );
-
-  await interaction.message
-    .edit({
-      embeds: [
-        ...interaction.message.embeds,
-        embed,
-      ],
-      components: [
-        claimRow,
-      ],
-    })
-    .catch(
-      (err) => {
-        console.error(
-          'Failed to update unclaimed ticket message:',
-          err
-        );
-      }
-    );
-
-  return;
+  ).catch((err) => {
+    console.error('Failed to update staff tracker for ticket claim:', err);
+  });
 }
 
 
@@ -2269,673 +907,94 @@ async function unclaimTicket(
    CLOSE TICKET
 ========================================================= */
 
-const pendingTicketClosures =
-  new Map();
+const pendingTicketClosures = new Map();
 
-
-async function closeTicket(
-  interaction,
-  reason
-) {
-
-  const meta =
-    parseTopic(
-      interaction.channel.topic
-    );
-
-
-  if (!meta) {
-
-    return interaction.reply({
-      content:
-        'This does not look like a ticket channel.',
-      ephemeral: true,
-    });
-  }
-
-
-  const member =
-    interaction.member;
-
-
-  let roleIds =
-    getRoleIdsForTicket(
-      meta.categoryId
-    );
-
-
-  if (
-    meta.categoryId.startsWith(
-      'application_'
-    )
-  ) {
-    roleIds =
-      getApplicationTicketRoleIds();
-  }
-
-
-  const isTicketStaff =
-    roleIds.some(
-      (roleId) =>
-        member.roles.cache.has(
-          roleId
-        )
-    );
-
-
-  const isOwner =
-    member.id ===
-    meta.userId;
-
-
-  if (
-    !isTicketStaff &&
-    !isOwner &&
-    !member.permissions.has(
-      PermissionsBitField.Flags.ManageChannels
-    )
-  ) {
-    return interaction.reply({
-      content:
-        'You do not have permission to close this ticket.',
-      ephemeral: true,
-    });
-  }
-
-
-  if (
-    pendingTicketClosures.has(
-      interaction.channel.id
-    )
-  ) {
-    return interaction.reply({
-      content:
-        'This ticket is already closing.',
-      ephemeral: true,
-    });
-  }
-
-
-  pendingTicketClosures.set(
-    interaction.channel.id,
-    {
-      reason:
-        reason || null,
-      closerId:
-        interaction.user.id,
-      requestedAt:
-        Date.now(),
-    }
-  );
-
-
-  // Close immediately. There is no confirmation step.
-  return finalizeCloseTicket(
-    interaction
-  );
-}
-
-
-/* =========================================================
-   FINALIZE CLOSE TICKET
-========================================================= */
-
-async function finalizeCloseTicket(
-  interaction
-) {
-
-  const meta =
-    parseTopic(
-      interaction.channel.topic
-    );
-
-
-  if (!meta) {
-
-    return interaction.reply({
-
-      content:
-        'This does not look like a ticket channel.',
-
-      ephemeral: true,
-
-    });
-  }
-
-
-  const pending =
-    pendingTicketClosures.get(
-      interaction.channel.id
-    );
-
-
-  if (!pending) {
-
-    return interaction.reply({
-
-      content:
-        'There is no pending closure request for this ticket.',
-
-      ephemeral: true,
-
-    });
-  }
-
-
-  pendingTicketClosures.delete(
-    interaction.channel.id
-  );
-
-
-  const closingEmbed =
-    new EmbedBuilder()
-      .setTitle(
-        '🔒 Closing ticket'
-      )
-      .setDescription(
-        `Closing ticket, generating transcript...\n\nClosed by ${interaction.user}.` +
-        (
-          pending.reason
-            ? `\n**Reason:** ${pending.reason}`
-            : ''
-        )
-      )
-      .setColor(
-        '#ED4245'
-      )
-      .setFooter({
-        text:
-          `This channel will be deleted in ${
-            config.closeCountdownSeconds ||
-            5
-          } seconds.`,
-      });
-
-
-  if (
-    typeof interaction.isButton === 'function' &&
-    interaction.isButton()
-  ) {
-    await interaction.update({
-      embeds: [
-        closingEmbed,
-      ],
-      components: [],
-    });
-  } else if (
-    interaction.deferred ||
-    interaction.replied
-  ) {
-    await interaction.editReply({
-      embeds: [
-        closingEmbed,
-      ],
-      components: [],
-    });
-  } else {
-    await interaction.reply({
-      embeds: [
-        closingEmbed,
-      ],
-      components: [],
-    });
-  }
-
-
-  const closerId =
-    pending.closerId ||
-    interaction.user.id;
-
-
-  incrementStat(
-    interaction.guild,
-    closerId,
-    'ticketsClosed'
-  ).catch(
-    (err) => {
-
-      console.error(
-        'Failed to update staff tracker for ticket close:',
-        err
-      );
-    }
-  );
-
-
-  if (
-    meta.categoryId ===
-    'partner'
-  ) {
-
-    incrementStat(
-      interaction.guild,
-      closerId,
-      'partnersCompleted'
-    ).catch(
-      () => {}
-    );
-
-  } else if (
-    meta.categoryId ===
-    'giveaway_sponsor'
-  ) {
-
-    incrementStat(
-      interaction.guild,
-      closerId,
-      'giveawaysSponsored'
-    ).catch(
-      () => {}
-    );
-  }
-
-
-  try {
-
-    const attachment =
-      await buildTranscript(
-        interaction.channel
-      );
-
-
-    const logChannelId =
-      config.transcriptLogChannelId;
-
-
-    if (
-      logChannelId &&
-      !logChannelId.startsWith(
-        'PUT_'
-      )
-    ) {
-
-      const logChannel =
-        await interaction.guild.channels
-          .fetch(
-            logChannelId
-          )
-          .catch(
-            () => null
-          );
-
-
-      if (
-        logChannel &&
-        logChannel.isTextBased()
-      ) {
-
-        const logEmbed =
-          new EmbedBuilder()
-            .setTitle(
-              'Ticket Closed'
-            )
-            .addFields(
-
-              {
-                name:
-                  'Channel',
-
-                value:
-                  `#${interaction.channel.name}`,
-
-                inline:
-                  true,
-              },
-
-              {
-                name:
-                  'Opened by',
-
-                value:
-                  `<@${meta.userId}>`,
-
-                inline:
-                  true,
-              },
-
-              {
-                name:
-                  'Closed by',
-
-                value:
-                  `<@${closerId}>`,
-
-                inline:
-                  true,
-              },
-
-
-              {
-                name:
-                  'Category',
-
-                value:
-                  meta.categoryId,
-
-                inline:
-                  true,
-              }
-
-            )
-            .setColor(
-              '#ED4245'
-            )
-            .setTimestamp();
-
-
-        if (
-          pending.reason
-        ) {
-
-          logEmbed.addFields({
-
-            name:
-              'Reason',
-
-            value:
-              pending.reason.slice(
-                0,
-                1024
-              ),
-
-          });
-        }
-
-
-        await logChannel.send({
-
-          embeds: [
-            logEmbed,
-          ],
-
-          files: [
-            attachment,
-          ],
-
-        });
-      }
-    }
-
-
-    const opener =
-      await interaction.guild.members
-        .fetch(
-          meta.userId
-        )
-        .catch(
-          () => null
-        );
-
-
-    if (
-      opener
-    ) {
-
-      const dmAttachment =
-        await buildTranscript(
-          interaction.channel
-        );
-
-
-      await opener
-        .send({
-
-          content:
-            'Here is a transcript of your closed ticket.',
-
-          files: [
-            dmAttachment,
-          ],
-
-        })
-        .catch(
-          () => {}
-        );
-    }
-
-  } catch (err) {
-
-    console.error(
-      'Failed to build/send transcript:',
-      err
-    );
-  }
-
-
-  setTimeout(
-    () => {
-
-      interaction.channel
-        .delete()
-        .catch(
-          () => {}
-        );
-
-    },
-
-    (
-      config.closeCountdownSeconds ||
-      5
-    ) * 1000
-  );
-}
-
-
-/* =========================================================
-   CANCEL CLOSE TICKET
-========================================================= */
-
-async function cancelCloseTicket(
-  interaction
-) {
-
-  const meta =
-    parseTopic(
-      interaction.channel.topic
-    );
-
-
-  if (!meta) {
-
-    return interaction.reply({
-
-      content:
-        'This does not look like a ticket channel.',
-
-      ephemeral: true,
-
-    });
-  }
-
-
-  if (
-    interaction.user.id !==
-    meta.userId
-  ) {
-
-    return interaction.reply({
-
-      content:
-        'Only the person who opened this ticket can cancel the closure.',
-
-      ephemeral: true,
-
-    });
-  }
-
-
-  if (
-    !pendingTicketClosures.has(
-      interaction.channel.id
-    )
-  ) {
-
-    return interaction.reply({
-
-      content:
-        'There is no pending closure request for this ticket.',
-
-      ephemeral: true,
-
-    });
-  }
-
-
-  pendingTicketClosures.delete(
-    interaction.channel.id
-  );
-
-
-  await interaction.update({
-
-    embeds: [
-
-      new EmbedBuilder()
-
-        .setTitle(
-          '✅ Ticket Kept Open'
-        )
-
-        .setDescription(
-          `No problem, ${interaction.user}. Your ticket will remain open and staff can continue helping you.`
-        )
-
-        .setColor(
-          '#57F287'
-        ),
-
-    ],
-
-    components: [
-      buildTicketControlRow(
-        false
-      ),
-    ],
-
-  });
-}
-
-/* =========================================================
-   FORCE CLOSE TICKET
-========================================================= */
-
-async function forceCloseTicket(interaction) {
+async function closeTicket(interaction, reason) {
   const meta = parseTopic(interaction.channel.topic);
 
   if (!meta) {
     return interaction.reply({
-      content: '❌ This does not look like a ticket channel.',
+      content: 'This does not look like a ticket channel.',
       ephemeral: true,
     });
   }
 
-  // Check for the configured MOD role
-  const isMod = (config.modRoleIds || []).some(
-    (roleId) =>
-      roleId &&
-      interaction.member?.roles?.cache?.has(roleId)
+  const member = interaction.member;
+
+  let roleIds = getRoleIdsForTicket(meta.categoryId);
+
+  if (meta.categoryId.startsWith('application_')) {
+    roleIds = getApplicationTicketRoleIds();
+  }
+
+  const isTicketStaff = roleIds.some((roleId) =>
+    member.roles.cache.has(roleId)
   );
 
-  if (!isMod) {
+  const isOwner = member.id === meta.userId;
+
+  if (
+    !isTicketStaff &&
+    !isOwner &&
+    !member.permissions.has(PermissionsBitField.Flags.ManageChannels)
+  ) {
     return interaction.reply({
-      content: '❌ You need the **Mod** role to use `/forceclose`.',
+      content: 'You do not have permission to close this ticket.',
       ephemeral: true,
     });
   }
 
-  await interaction.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle('🔒 Ticket Force Closed')
-        .setDescription(
-          `This ticket was force closed by ${interaction.user}.`
-        )
-        .setColor('#ED4245')
-        .setTimestamp(),
-    ],
-    components: [],
-  });
-
-  try {
-    const attachment =
-      await buildTranscript(interaction.channel);
-
-    const logChannelId =
-      config.transcriptLogChannelId;
-
-    if (
-      logChannelId &&
-      !logChannelId.startsWith('PUT_')
-    ) {
-      const logChannel =
-        await interaction.guild.channels
-          .fetch(logChannelId)
-          .catch(() => null);
-
-      if (
-        logChannel &&
-        logChannel.isTextBased()
-      ) {
-        const logEmbed =
-          new EmbedBuilder()
-            .setTitle('Ticket Force Closed')
-            .addFields(
-              {
-                name: 'Channel',
-                value: `#${interaction.channel.name}`,
-                inline: true,
-              },
-              {
-                name: 'Opened by',
-                value: `<@${meta.userId}>`,
-                inline: true,
-              },
-              {
-                name: 'Force closed by',
-                value: `${interaction.user}`,
-                inline: true,
-              },
-              {
-                name: 'Category',
-                value: meta.categoryId,
-                inline: true,
-              }
-            )
-            .setColor('#ED4245')
-            .setTimestamp();
-
-        await logChannel.send({
-          embeds: [logEmbed],
-          files: [attachment],
-        });
-      }
-    }
-  } catch (err) {
-    console.error(
-      'Failed to build/send force-close transcript:',
-      err
-    );
+  if (pendingTicketClosures.has(interaction.channel.id)) {
+    return interaction.reply({
+      content: 'This ticket is already waiting for the ticket owner to confirm closure.',
+      ephemeral: true,
+    });
   }
 
-  setTimeout(() => {
-    interaction.channel.delete().catch(() => {});
-  }, (config.closeCountdownSeconds || 5) * 1000);
-}
-/* =========================================================
-   EXPORTS
-========================================================= */
+  pendingTicketClosures.set(interaction.channel.id, {
+    reason: reason || null,
+    closerId: interaction.user.id,
+    requestedAt: Date.now(),
+  });
 
-module.exports = {
-  createTicket,
-  createApplicationTicket,
-  claimTicket,
-  unclaimTicket,
-  closeTicket,
-  finalizeCloseTicket,
-  cancelCloseTicket,
-  forceCloseTicket,
-  parseTopic,
-  buildTicketControlRow,
-  findCategory,
-  isServiceTicket,
-};
+  const confirmationEmbed = new EmbedBuilder()
+    .setTitle('🔒 Ticket Closure Requested')
+    .setDescription(
+      `This ticket was marked for closure by ${interaction.user}.\n\n` +
+      `<@${meta.userId}>, **has your issue been solved and would you like to close this ticket?**\n\n` +
+      'Please choose **Yes, close it** or **No, keep it open** below.'
+    )
+    .setColor('#FEE75C')
+    .setFooter({ text: 'Only the person who opened this ticket can confirm the closure.' });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_close_confirm')
+      .setLabel('Yes, close it')
+      .setEmoji('✅')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('ticket_close_cancel')
+      .setLabel('No, keep it open')
+      .setEmoji('❌')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({
+      embeds: [confirmationEmbed],
+      components: [row],
+    });
+  } else {
+    await interaction.reply({
+      embeds: [confirmationEmbed],
+      components: [row],
+    });
+  }
+}
+
+async function finalizeCloseTicket(interaction) {
+  const meta = parseTopic(interaction.channel.topic);
+
+  if (!meta) {
+    return interaction.reply({
