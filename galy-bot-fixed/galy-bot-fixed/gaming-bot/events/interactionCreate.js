@@ -203,12 +203,14 @@ async function resetApplicationDropdown(message) {
    BUILD TICKET QUESTIONS MODAL
 ========================================================= */
 
-function buildQuestionsModal(category) {
+function buildQuestionsModal(category, customRoleId = null) {
   const questions = category.questions || [];
 
   const modal = new ModalBuilder()
     .setCustomId(
-      `ticket_questions_modal_${category.id}`
+      customRoleId
+        ? `ticket_questions_modal_${category.id}|customrole:${customRoleId}`
+        : `ticket_questions_modal_${category.id}`
     )
     .setTitle(
       String(
@@ -454,11 +456,23 @@ module.exports = {
         )
       ) {
 
-        const categoryId =
+        const modalData =
           interaction.customId.replace(
             'ticket_questions_modal_',
             ''
           );
+
+        const [categoryId, customRolePart] =
+          modalData.split('|');
+
+        const customRoleId =
+          customRolePart &&
+          customRolePart.startsWith('customrole:')
+            ? customRolePart.replace(
+                'customrole:',
+                ''
+              )
+            : null;
 
         const category =
           findTicketCategory(categoryId);
@@ -488,11 +502,44 @@ module.exports = {
           })
         );
 
-        await createTicket(
-          interaction,
-          categoryId,
-          answers
-        );
+        const originalRoleIds =
+          Array.isArray(category.roleIds)
+            ? [...category.roleIds]
+            : [];
+
+        if (customRoleId) {
+          const role =
+            interaction.guild?.roles.cache.get(customRoleId) ||
+            await interaction.guild?.roles
+              .fetch(customRoleId)
+              .catch(() => null);
+
+          if (!role) {
+            return interaction.reply({
+              content:
+                '❌ This ticket panel does not have a valid role configured.',
+              ephemeral: true,
+            });
+          }
+
+          category.roleIds = [
+            ...new Set([
+              ...originalRoleIds,
+              role.id,
+            ]),
+          ];
+        }
+
+        try {
+          await createTicket(
+            interaction,
+            categoryId,
+            answers
+          );
+        } finally {
+          category.roleIds =
+            originalRoleIds;
+        }
 
         return;
       }
@@ -678,62 +725,90 @@ module.exports = {
 
         /* =================================================
            CUSTOM TICKET PANEL
+           customId format:
+           custom_ticket_create:<roleId>
         ================================================= */
 
-        if (interaction.customId.startsWith('custom_ticket_create')) {
-          const parts = interaction.customId.split('_');
-          const selectedRoleId = parts[3] || null;
-          const categories = config.categories || [];
+        if (
+          interaction.customId.startsWith(
+            'custom_ticket_create:'
+          )
+        ) {
+          const roleId =
+            interaction.customId.replace(
+              'custom_ticket_create:',
+              ''
+            );
 
-          if (!categories.length) {
-            return interaction.reply({
-              content: '❌ No normal ticket categories are configured.',
-              ephemeral: true,
-            });
-          }
-
-          const category = categories[0];
-
-          if (!category?.id) {
-            return interaction.reply({
-              content: '❌ The default ticket category is invalid.',
-              ephemeral: true,
-            });
-          }
-
-          if (!selectedRoleId || selectedRoleId.startsWith('PUT_')) {
-            return interaction.reply({
-              content: '❌ This ticket panel does not have a valid role configured.',
-              ephemeral: true,
-            });
-          }
-
-          const role = await interaction.guild.roles.fetch(selectedRoleId).catch(() => null);
+          const role =
+            interaction.guild?.roles.cache.get(roleId) ||
+            await interaction.guild?.roles.fetch(roleId).catch(() => null);
 
           if (!role) {
             return interaction.reply({
-              content: '❌ The selected ticket role no longer exists.',
+              content:
+                '❌ This ticket panel does not have a valid role configured.',
               ephemeral: true,
             });
           }
 
-          if (Array.isArray(category.questions) && category.questions.length > 0) {
-            await interaction.showModal(buildQuestionsModal(category));
+          const categories =
+            config.categories || [];
+
+          if (!categories.length) {
+            return interaction.reply({
+              content:
+                '❌ No normal ticket categories are configured.',
+              ephemeral: true,
+            });
+          }
+
+          const category =
+            categories.find((item) => item?.id) ||
+            null;
+
+          if (!category) {
+            return interaction.reply({
+              content:
+                '❌ The default ticket category is invalid.',
+              ephemeral: true,
+            });
+          }
+
+          if (
+            Array.isArray(category.questions) &&
+            category.questions.length > 0
+          ) {
+            await interaction.showModal(
+              buildQuestionsModal(
+                category,
+                role.id
+              )
+            );
+
             return;
           }
 
-          const originalRoleIds = Array.isArray(category.roleIds)
-            ? [...category.roleIds]
-            : [];
+          const originalRoleIds =
+            Array.isArray(category.roleIds)
+              ? [...category.roleIds]
+              : [];
 
-          if (!category.roleIds.includes(selectedRoleId)) {
-            category.roleIds.push(selectedRoleId);
-          }
+          category.roleIds = [
+            ...new Set([
+              ...originalRoleIds,
+              role.id,
+            ]),
+          ];
 
           try {
-            await createTicket(interaction, category.id);
+            await createTicket(
+              interaction,
+              category.id
+            );
           } finally {
-            category.roleIds = originalRoleIds;
+            category.roleIds =
+              originalRoleIds;
           }
 
           return;
