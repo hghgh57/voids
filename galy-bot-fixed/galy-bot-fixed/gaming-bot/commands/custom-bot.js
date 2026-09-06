@@ -4,6 +4,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  PermissionFlagsBits,
 } = require('discord.js');
 
 module.exports = {
@@ -17,31 +18,24 @@ module.exports = {
         .setRequired(true)
         .setMaxLength(4096)
     )
+    .addRoleOption((option) =>
+      option
+        .setName('role')
+        .setDescription('The role that can see the tickets created by this panel.')
+        .setRequired(true)
+    )
     .addStringOption((option) =>
       option
         .setName('title')
         .setDescription('The optional title shown on the ticket panel.')
         .setRequired(false)
         .setMaxLength(256)
-    )
-    .addRoleOption((option) =>
-      option
-        .setName('role')
-        .setDescription('The role that can see and access tickets from this panel.')
-        .setRequired(true)
     ),
 
   async execute(interaction) {
     const description = interaction.options.getString('description');
-    const title = interaction.options.getString('title');
     const role = interaction.options.getRole('role');
-
-    if (!role) {
-      return interaction.reply({
-        content: '❌ Please choose a valid role.',
-        ephemeral: true,
-      });
-    }
+    const title = interaction.options.getString('title');
 
     const embed = new EmbedBuilder()
       .setDescription(description)
@@ -52,7 +46,7 @@ module.exports = {
     }
 
     const button = new ButtonBuilder()
-      .setCustomId(`custom_ticket_create_${role.id}`)
+      .setCustomId(`custom_ticket_create:${role.id}`)
       .setLabel('Create a Ticket')
       .setEmoji('🎫')
       .setStyle(ButtonStyle.Primary);
@@ -66,7 +60,7 @@ module.exports = {
     });
 
     await interaction.reply({
-      content: `✅ Custom ticket panel sent. ${role} can see and access the tickets created from it.`,
+      content: `✅ Custom ticket panel sent. Tickets will be visible to ${role}.`,
       ephemeral: true,
     });
   },
