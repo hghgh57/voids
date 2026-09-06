@@ -677,6 +677,69 @@ module.exports = {
       if (interaction.isButton()) {
 
         /* =================================================
+           CUSTOM TICKET PANEL
+        ================================================= */
+
+        if (interaction.customId.startsWith('custom_ticket_create')) {
+          const parts = interaction.customId.split('_');
+          const selectedRoleId = parts[3] || null;
+          const categories = config.categories || [];
+
+          if (!categories.length) {
+            return interaction.reply({
+              content: '❌ No normal ticket categories are configured.',
+              ephemeral: true,
+            });
+          }
+
+          const category = categories[0];
+
+          if (!category?.id) {
+            return interaction.reply({
+              content: '❌ The default ticket category is invalid.',
+              ephemeral: true,
+            });
+          }
+
+          if (!selectedRoleId || selectedRoleId.startsWith('PUT_')) {
+            return interaction.reply({
+              content: '❌ This ticket panel does not have a valid role configured.',
+              ephemeral: true,
+            });
+          }
+
+          const role = await interaction.guild.roles.fetch(selectedRoleId).catch(() => null);
+
+          if (!role) {
+            return interaction.reply({
+              content: '❌ The selected ticket role no longer exists.',
+              ephemeral: true,
+            });
+          }
+
+          if (Array.isArray(category.questions) && category.questions.length > 0) {
+            await interaction.showModal(buildQuestionsModal(category));
+            return;
+          }
+
+          const originalRoleIds = Array.isArray(category.roleIds)
+            ? [...category.roleIds]
+            : [];
+
+          if (!category.roleIds.includes(selectedRoleId)) {
+            category.roleIds.push(selectedRoleId);
+          }
+
+          try {
+            await createTicket(interaction, category.id);
+          } finally {
+            category.roleIds = originalRoleIds;
+          }
+
+          return;
+        }
+
+        /* =================================================
            SERVICE TICKET BUTTONS
            The /service-tickets command uses buttons with:
            service_ticket_open_<serviceId>
@@ -997,3 +1060,703 @@ module.exports = {
             giveaway.entrants.push(
               userId
             );
+
+            saveGiveaways(
+              giveaways
+            );
+
+            await interaction.reply({
+              content:
+                '🎉 You entered the giveaway!',
+              ephemeral: true,
+            });
+
+          } else {
+
+            giveaway.entrants.splice(
+              idx,
+              1
+            );
+
+            saveGiveaways(
+              giveaways
+            );
+
+            await interaction.reply({
+              content:
+                'You left the giveaway.',
+              ephemeral: true,
+            });
+          }
+
+          const updatedEmbed =
+            buildGiveawayEmbed(
+              giveaway.prize,
+              giveaway.endTimestamp,
+              giveaway.winnerCount,
+              giveaway.entrants.length
+            );
+
+          await interaction.message
+            .edit({
+              embeds: [
+                updatedEmbed,
+              ],
+            })
+            .catch(() => {});
+
+          return;
+        }
+
+
+        /* =================================================
+           REACTION ROLES
+        ================================================= */
+
+        if (
+          interaction.customId.startsWith(
+            'rr_'
+          )
+        ) {
+
+          const roleId =
+            interaction.customId.replace(
+              'rr_',
+              ''
+            );
+
+          const member =
+            interaction.member;
+
+          await interaction.deferReply({
+            ephemeral: true,
+          });
+
+          const role =
+            await interaction.guild.roles
+              .fetch(roleId)
+              .catch(() => null);
+
+          if (!role) {
+
+            return interaction.editReply({
+              content:
+                '❌ That role no longer exists.',
+            });
+          }
+
+          const configEntry =
+            (
+              config.reactionRoles?.roles ||
+              []
+            ).find(
+              (r) =>
+                r.roleId === roleId
+            );
+
+          const displayName =
+            configEntry?.label ||
+            role.name;
+
+
+          if (
+            member.roles.cache.has(
+              roleId
+            )
+          ) {
+
+            try {
+
+              await member.roles.remove(
+                roleId
+              );
+
+              await interaction.editReply({
+                content:
+                  `Removed the **${displayName}** role.`,
+              });
+
+            } catch (err) {
+
+              console.error(
+                `Failed to remove role ${roleId}:`,
+                err
+              );
+
+              await interaction.editReply({
+                content:
+                  `❌ I couldn't remove the **${displayName}** role — check that my bot role is above it.`,
+              });
+            }
+
+          } else {
+
+            try {
+
+              await member.roles.add(
+                roleId
+              );
+
+              await interaction.editReply({
+                content:
+                  `Gave you the **${displayName}** role!`,
+              });
+
+            } catch (err) {
+
+              console.error(
+                `Failed to add role ${roleId}:`,
+                err
+              );
+
+              await interaction.editReply({
+                content:
+                  `❌ I couldn't give you the **${displayName}** role — check that my bot role is above it.`,
+              });
+            }
+          }
+
+          return;
+        }
+
+
+        /* =================================================
+           TICKET CLAIM
+        ================================================= */
+
+        if (
+          interaction.customId ===
+          'ticket_claim'
+        ) {
+
+          await claimTicket(
+            interaction
+          );
+
+          return;
+        }
+
+
+        /* =================================================
+           TICKET CLOSE
+        ================================================= */
+
+        if (
+          interaction.customId ===
+          'ticket_close'
+        ) {
+
+          await closeTicket(
+            interaction,
+            null
+          );
+
+          return;
+        }
+
+        /* =================================================
+           TICKET CLOSE CONFIRMATION
+        ================================================= */
+
+        if (interaction.customId === 'ticket_close_confirm') {
+          await finalizeCloseTicket(interaction);
+          return;
+        }
+
+        if (interaction.customId === 'ticket_close_cancel') {
+          await cancelCloseTicket(interaction);
+          return;
+        }
+
+
+        /* =================================================
+           CLOSE WITH REASON
+        ================================================= */
+
+        if (
+          interaction.customId ===
+          'ticket_close_reason'
+        ) {
+
+          const modal =
+            new ModalBuilder()
+              .setCustomId(
+                'ticket_close_reason_modal'
+              )
+              .setTitle(
+                'Close Ticket'
+              );
+
+          const reasonInput =
+            new TextInputBuilder()
+              .setCustomId(
+                'close_reason_input'
+              )
+              .setLabel(
+                'Reason for closing'
+              )
+              .setStyle(
+                TextInputStyle.Paragraph
+              )
+              .setPlaceholder(
+                'e.g. Issue resolved'
+              )
+              .setRequired(true)
+              .setMaxLength(500);
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(
+              reasonInput
+            )
+          );
+
+          await interaction.showModal(
+            modal
+          );
+
+          return;
+        }
+
+
+        /* =================================================
+           APPLICATION ACCEPT / DENY
+        ================================================= */
+
+        if (
+          interaction.customId.startsWith(
+            'app_accept_'
+          ) ||
+          interaction.customId.startsWith(
+            'app_deny_'
+          )
+        ) {
+
+          const isAccept =
+            interaction.customId.startsWith(
+              'app_accept_'
+            );
+
+          const prefix =
+            isAccept
+              ? 'app_accept_'
+              : 'app_deny_';
+
+          const rest =
+            interaction.customId.replace(
+              prefix,
+              ''
+            );
+
+          /*
+            Format:
+
+            app_accept_USERID_APPID
+            app_deny_USERID_APPID
+
+            Split only at the FIRST underscore.
+          */
+
+          const separator =
+            rest.indexOf('_');
+
+          if (
+            separator === -1
+          ) {
+
+            return interaction.reply({
+              content:
+                '❌ Invalid application button.',
+              ephemeral: true,
+            });
+          }
+
+          const applicantId =
+            rest.slice(
+              0,
+              separator
+            );
+
+          const appId =
+            rest.slice(
+              separator + 1
+            );
+
+
+          /* =================================================
+             STAFF CHECK
+          ================================================= */
+
+          if (
+            !interaction.member ||
+            !isSupport(
+              interaction.member
+            )
+          ) {
+
+            return interaction.reply({
+              content:
+                'Only staff can accept or deny applications.',
+              ephemeral: true,
+            });
+          }
+
+
+          /* =================================================
+             APPLICATION CONFIG
+          ================================================= */
+
+          const appConfig =
+            (
+              config.applications ||
+              []
+            ).find(
+              (app) =>
+                String(app.id) ===
+                String(appId)
+            );
+
+          const label =
+            appConfig
+              ? appConfig.label
+              : 'Application';
+
+
+          /* =================================================
+             GET ORIGINAL EMBED
+          ================================================= */
+
+          const originalEmbed =
+            interaction.message
+              .embeds[0];
+
+          if (!originalEmbed) {
+
+            return interaction.reply({
+              content:
+                '❌ Could not find the application embed.',
+              ephemeral: true,
+            });
+          }
+
+
+          /* =================================================
+             UPDATE APPLICATION
+          ================================================= */
+
+          const updatedEmbed =
+            EmbedBuilder
+              .from(originalEmbed)
+              .setColor(
+                isAccept
+                  ? '#57F287'
+                  : '#ED4245'
+              )
+              .setFooter({
+                text:
+                  `${
+                    isAccept
+                      ? 'Accepted'
+                      : 'Denied'
+                  } by ${
+                    interaction.user.tag
+                  }`,
+              });
+
+
+          await interaction.update({
+            embeds: [
+              updatedEmbed,
+            ],
+
+            components: [
+              buildDecisionRow(
+                applicantId,
+                appId,
+                true
+              ),
+            ],
+          });
+
+
+          /* =================================================
+             CLEAR PENDING APPLICATION
+          ================================================= */
+
+          clearApplied(
+            applicantId,
+            appId
+          );
+
+
+          /* =================================================
+             DM APPLICANT
+          ================================================= */
+
+          const applicant =
+            await interaction.client.users
+              .fetch(applicantId)
+              .catch(() => null);
+
+          if (applicant) {
+
+            await applicant
+              .send(
+                isAccept
+                  ? `🎉 Your **${label}** application in **${interaction.guild.name}** was accepted!`
+                  : `Your **${label}** application in **${interaction.guild.name}** was denied.`
+              )
+              .catch((err) => {
+                console.error(
+                  `Could not DM applicant ${applicantId}:`,
+                  err.message
+                );
+              });
+          }
+
+          return;
+        }
+      }
+
+
+      /* =====================================================
+         CLOSE REASON MODAL
+      ===================================================== */
+
+      if (
+        interaction.isModalSubmit() &&
+        interaction.customId ===
+          'ticket_close_reason_modal'
+      ) {
+
+        const reason =
+          interaction.fields
+            .getTextInputValue(
+              'close_reason_input'
+            );
+
+        await closeTicket(
+          interaction,
+          reason
+        );
+
+        return;
+      }
+
+
+      /* =====================================================
+         VOUCH COMMENT MODAL
+      ===================================================== */
+
+      if (
+        interaction.isModalSubmit() &&
+        interaction.customId.startsWith(
+          'vouch_comment_modal_'
+        )
+      ) {
+
+        const rest =
+          interaction.customId.replace(
+            'vouch_comment_modal_',
+            ''
+          );
+
+        const [
+          requesterId,
+          optionValue,
+          stars,
+        ] = rest.split('|');
+
+        const comment =
+          interaction.fields
+            .getTextInputValue(
+              'vouch_comment_input'
+            ) ||
+          'No comment left.';
+
+        const optionLabel =
+          OPTION_LABELS[
+            optionValue
+          ] ||
+          optionValue;
+
+        const starsNum =
+          parseInt(
+            stars,
+            10
+          );
+
+        const safeStars =
+          Math.max(
+            1,
+            Math.min(
+              5,
+              Number.isNaN(
+                starsNum
+              )
+                ? 5
+                : starsNum
+            )
+          );
+
+        const starDisplay =
+          '⭐'.repeat(
+            safeStars
+          ) +
+          '☆'.repeat(
+            5 - safeStars
+          );
+
+
+        await interaction.update({
+          embeds: [
+            new EmbedBuilder()
+              .setDescription(
+                '✅ Thanks for your vouch!'
+              )
+              .setColor(
+                '#57F287'
+              ),
+          ],
+
+          components: [],
+        });
+
+
+        const vouchChannelId =
+          config.vouchChannelId;
+
+        if (
+          vouchChannelId &&
+          !vouchChannelId.startsWith(
+            'PUT_'
+          )
+        ) {
+
+          const vouchChannel =
+            await interaction.client.channels
+              .fetch(
+                vouchChannelId
+              )
+              .catch(
+                () => null
+              );
+
+          if (vouchChannel) {
+
+            const requester =
+              await interaction.client.users
+                .fetch(
+                  requesterId
+                )
+                .catch(
+                  () => null
+                );
+
+            const vouchEmbed =
+              new EmbedBuilder()
+                .setTitle(
+                  '⭐ New Vouch'
+                )
+                .addFields(
+                  {
+                    name:
+                      'Vouch For',
+
+                    value:
+                      requester
+                        ? `${requester}`
+                        : `<@${requesterId}>`,
+
+                    inline: true,
+                  },
+
+                  {
+                    name:
+                      'From',
+
+                    value:
+                      `${interaction.user}`,
+
+                    inline: true,
+                  },
+
+                  {
+                    name:
+                      'Category',
+
+                    value:
+                      optionLabel,
+
+                    inline: true,
+                  },
+
+                  {
+                    name:
+                      'Rating',
+
+                    value:
+                      starDisplay,
+                  },
+
+                  {
+                    name:
+                      'Comment',
+
+                    value:
+                      comment,
+                  }
+                )
+                .setColor(
+                  '#FEE75C'
+                )
+                .setTimestamp();
+
+
+            await vouchChannel
+              .send({
+                embeds: [
+                  vouchEmbed,
+                ],
+              })
+              .catch(
+                () => {}
+              );
+          }
+        }
+
+        return;
+      }
+
+    } catch (err) {
+
+      console.error(
+        'Error handling interaction:',
+        err
+      );
+
+      try {
+
+        if (
+          interaction.deferred ||
+          interaction.replied
+        ) {
+
+          await interaction.followUp({
+            content:
+              '❌ Something went wrong handling that action.',
+            ephemeral: true,
+          });
+
+        } else {
+
+          await interaction.reply({
+            content:
+              '❌ Something went wrong handling that action.',
+            ephemeral: true,
+          });
+        }
+
+      } catch (_) {}
+    }
+  },
+};
