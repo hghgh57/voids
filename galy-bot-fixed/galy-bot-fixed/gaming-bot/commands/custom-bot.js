@@ -23,11 +23,25 @@ module.exports = {
         .setDescription('The optional title shown on the ticket panel.')
         .setRequired(false)
         .setMaxLength(256)
+    )
+    .addRoleOption((option) =>
+      option
+        .setName('role')
+        .setDescription('The role that can see and access tickets from this panel.')
+        .setRequired(true)
     ),
 
   async execute(interaction) {
     const description = interaction.options.getString('description');
     const title = interaction.options.getString('title');
+    const role = interaction.options.getRole('role');
+
+    if (!role) {
+      return interaction.reply({
+        content: '❌ Please choose a valid role.',
+        ephemeral: true,
+      });
+    }
 
     const embed = new EmbedBuilder()
       .setDescription(description)
@@ -38,7 +52,7 @@ module.exports = {
     }
 
     const button = new ButtonBuilder()
-      .setCustomId('custom_ticket_create')
+      .setCustomId(`custom_ticket_create_${role.id}`)
       .setLabel('Create a Ticket')
       .setEmoji('🎫')
       .setStyle(ButtonStyle.Primary);
@@ -52,7 +66,7 @@ module.exports = {
     });
 
     await interaction.reply({
-      content: '✅ Custom ticket panel sent.',
+      content: `✅ Custom ticket panel sent. ${role} can see and access the tickets created from it.`,
       ephemeral: true,
     });
   },
