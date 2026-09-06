@@ -720,41 +720,40 @@ module.exports = {
         /* =================================================
            CUSTOM TICKET PANEL
 
-           Format: custom_ticket_create_ROLEID
-           This is completely separate from the normal
-           ticket panel and does NOT use the normal support
-           category/role/question flow.
+           Custom tickets:
+           - only the Dev role can see them (plus the ticket owner)
+           - no category/parent
+           - no support questions
+           - closes through the normal ticket close system
         ================================================= */
+
         if (interaction.customId.startsWith('custom_ticket_create:')) {
-          const customRoleId = interaction.customId.split(':')[1];
-
-          if (!customRoleId) {
-            return interaction.reply({
-              content: '❌ This ticket panel does not have a valid role configured.',
-              ephemeral: true,
-            });
-          }
-
-          const customRole = await interaction.guild.roles
-            .fetch(customRoleId)
+          const DEV_ROLE_ID = '1539513728972628058';
+          const role = await interaction.guild.roles
+            .fetch(DEV_ROLE_ID)
             .catch(() => null);
 
-          if (!customRole) {
+          if (!role) {
             return interaction.reply({
-              content: '❌ This ticket panel does not have a valid role configured.',
+              content: '❌ The Dev role could not be found.',
               ephemeral: true,
             });
           }
 
           const existing = interaction.guild.channels.cache.filter((channel) => {
-            if (!channel.topic || !channel.topic.startsWith('custom_ticket|')) return false;
+            if (!channel.topic || !channel.topic.startsWith('custom_ticket|')) {
+              return false;
+            }
+
             const parts = channel.topic.split('|');
             return parts[1] === interaction.user.id;
           }).size;
 
           if (existing >= (config.maxOpenTicketsPerUser || 2)) {
             return interaction.reply({
-              content: `You already have ${existing} open ticket(s). Please close one before opening another.`,
+              content:
+                `You already have ${existing} open custom ticket(s). ` +
+                'Please close one before opening another.',
               ephemeral: true,
             });
           }
@@ -764,7 +763,9 @@ module.exports = {
           const permissionOverwrites = [
             {
               id: interaction.guild.roles.everyone.id,
-              deny: [PermissionsBitField.Flags.ViewChannel],
+              deny: [
+                PermissionsBitField.Flags.ViewChannel,
+              ],
             },
             {
               id: interaction.user.id,
@@ -777,7 +778,7 @@ module.exports = {
               ],
             },
             {
-              id: customRole.id,
+              id: DEV_ROLE_ID,
               allow: [
                 PermissionsBitField.Flags.ViewChannel,
                 PermissionsBitField.Flags.SendMessages,
@@ -810,26 +811,14 @@ module.exports = {
               .replace(/[^a-z0-9]/g, '')
               .slice(0, 20) || 'user';
 
-          const channelOptions = {
-            name: `custom-${safeName}`,
-            type: ChannelType.GuildText,
-            topic: `custom_ticket|${interaction.user.id}|${customRole.id}`,
-            permissionOverwrites,
-          };
-
-          const parentId = config.ticketCategoryId;
-          if (parentId && typeof parentId === 'string' && !parentId.startsWith('PUT_')) {
-            const parent = await interaction.guild.channels
-              .fetch(parentId)
-              .catch(() => null);
-
-            if (parent && parent.type === ChannelType.GuildCategory) {
-              channelOptions.parent = parent.id;
-            }
-          }
-
           try {
-            const channel = await interaction.guild.channels.create(channelOptions);
+            // No parent/category is deliberately specified.
+            const channel = await interaction.guild.channels.create({
+              name: `custom-${safeName}`,
+              type: ChannelType.GuildText,
+              topic: `custom_ticket|${interaction.user.id}|${DEV_ROLE_ID}`,
+              permissionOverwrites,
+            });
 
             const embed = new EmbedBuilder()
               .setTitle('🎫 Ticket Created')
@@ -841,7 +830,7 @@ module.exports = {
               .setTimestamp();
 
             await channel.send({
-              content: `${interaction.user} <@&${customRole.id}>`,
+              content: `${interaction.user} <@&${DEV_ROLE_ID}>`,
               embeds: [embed],
               components: [buildTicketControlRow()],
             });
@@ -850,60 +839,16 @@ module.exports = {
               content: `✅ Your ticket has been created: ${channel}`,
             });
           } catch (err) {
-            console.error('[CUSTOM TICKET] Failed to create custom ticket:', err);
+            console.error(
+              '[CUSTOM TICKET] Failed to create custom ticket:',
+              err
+            );
 
             await interaction.editReply({
-              content: '❌ Something went wrong creating your ticket. Please contact staff.',
+              content:
+                '❌ Something went wrong creating your ticket. Please contact staff.',
             }).catch(() => {});
           }
-
-          return;
-        }
-
-        /* =================================================
-           CUSTOM TICKET PANEL
-
-           Format: custom_ticket_create:<roleId>
-           This role only affects tickets created from the
-           custom panel. Normal tickets keep their config roles.
-        ================================================= */
-
-        if (interaction.customId.startsWith('custom_ticket_create:')) {
-          const roleId = interaction.customId.split(':')[1];
-          const role = interaction.guild?.roles.cache.get(roleId);
-
-          if (!role) {
-            return interaction.reply({
-              content: '❌ This ticket panel does not have a valid role configured.',
-              ephemeral: true,
-            });
-          }
-
-          const category = (config.categories || [])[0];
-
-          if (!category?.id) {
-            return interaction.reply({
-              content: '❌ No normal ticket category is configured.',
-              ephemeral: true,
-            });
-          }
-
-          if (
-            Array.isArray(category.questions) &&
-            category.questions.length > 0
-          ) {
-            await interaction.showModal(
-              buildCustomQuestionsModal(category, roleId)
-            );
-            return;
-          }
-
-          await createTicket(
-            interaction,
-            category.id,
-            [],
-            roleId
-          );
 
           return;
         }
