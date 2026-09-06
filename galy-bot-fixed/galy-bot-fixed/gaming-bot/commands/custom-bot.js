@@ -36,6 +36,13 @@ module.exports = {
     const role = interaction.options.getRole('role');
     const title = interaction.options.getString('title');
 
+    if (!role) {
+      return interaction.reply({
+        content: '❌ Please select a valid role.',
+        ephemeral: true,
+      });
+    }
+
     const embed = new EmbedBuilder()
       .setDescription(description)
       .setColor('#5865F2');
@@ -59,7 +66,7 @@ module.exports = {
     });
 
     await interaction.reply({
-      content: `✅ Custom ticket panel sent. Tickets will be visible to ${role}.`,
+      content: `✅ Custom ticket panel sent. Tickets will use ${role} for access.`,
       ephemeral: true,
     });
   },
