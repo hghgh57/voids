@@ -21,7 +21,24 @@ const { incrementStat } = require('./staffTracker');
 ========================================================= */
 
 function parseTopic(topic) {
-  if (!topic || !topic.startsWith('ticket|')) return null;
+  if (!topic) return null;
+
+  // Custom tickets are not normal category tickets.
+  // Format: custom_ticket|USER_ID|DEV_ROLE_ID
+  if (topic.startsWith('custom_ticket|')) {
+    const [, userId, customRoleId] = topic.split('|');
+
+    if (!userId || !customRoleId) return null;
+
+    return {
+      userId,
+      categoryId: `custom_${customRoleId}`,
+      customRoleId,
+      isCustom: true,
+    };
+  }
+
+  if (!topic.startsWith('ticket|')) return null;
 
   const [, userId, categoryId] = topic.split('|');
 
@@ -30,6 +47,7 @@ function parseTopic(topic) {
   return {
     userId,
     categoryId,
+    isCustom: false,
   };
 }
 
@@ -192,7 +210,8 @@ function getRoleIdsForTicket(categoryId) {
 async function createTicket(
   interaction,
   categoryId,
-  answers = []
+  answers = [],
+  staffRoleOverride = null
 ) {
   const { guild, user } = interaction;
 
@@ -286,8 +305,16 @@ async function createTicket(
   }
 
 
-  const staffRoleIds =
+  const configuredStaffRoleIds =
     getRoleIdsForTicket(categoryId);
+
+  // Custom ticket panels can supply one specific role.
+  // Normal ticket panels do not pass this value, so their
+  // existing configured roles remain completely unchanged.
+  const staffRoleIds =
+    staffRoleOverride
+      ? [staffRoleOverride]
+      : configuredStaffRoleIds;
 
 
   for (const roleId of staffRoleIds) {
@@ -804,10 +831,17 @@ async function claimTicket(
 
   const member = interaction.member;
 
-  let roleIds = getRoleIdsForTicket(meta.categoryId);
+  let roleIds = [];
 
-  if (meta.categoryId.startsWith('application_')) {
-    roleIds = getApplicationTicketRoleIds();
+  if (meta.isCustom && meta.customRoleId) {
+    // Custom tickets can only be managed by the configured Dev role.
+    roleIds = [meta.customRoleId];
+  } else {
+    roleIds = getRoleIdsForTicket(meta.categoryId);
+
+    if (meta.categoryId.startsWith('application_')) {
+      roleIds = getApplicationTicketRoleIds();
+    }
   }
 
   const isTicketStaff = roleIds.some((roleId) =>
@@ -921,10 +955,16 @@ async function closeTicket(interaction, reason) {
 
   const member = interaction.member;
 
-  let roleIds = getRoleIdsForTicket(meta.categoryId);
+  let roleIds = [];
 
-  if (meta.categoryId.startsWith('application_')) {
-    roleIds = getApplicationTicketRoleIds();
+  if (meta.isCustom && meta.customRoleId) {
+    roleIds = [meta.customRoleId];
+  } else {
+    roleIds = getRoleIdsForTicket(meta.categoryId);
+
+    if (meta.categoryId.startsWith('application_')) {
+      roleIds = getApplicationTicketRoleIds();
+    }
   }
 
   const isTicketStaff = roleIds.some((roleId) =>
