@@ -19,7 +19,7 @@ module.exports = {
     .addStringOption((opt) =>
       opt
         .setName('duration')
-        .setDescription('How long it runs, e.g. 30s, 10m, 1h, 1d')
+        .setDescription('How long it runs, e.g. 30s, 10m, 1h, 1d, 1w')
         .setRequired(true)
     )
     .addIntegerOption((opt) =>
@@ -38,28 +38,58 @@ module.exports = {
     const ms = parseDuration(durationStr);
     if (!ms) {
       return interaction.reply({
-        content: 'Invalid duration format. Use something like `30s`, `10m`, `1h`, or `1d`.',
+        content: 'Invalid duration format. Use something like `30s`, `10m`, `1h`, `1d`, or `1w`.',
+        ephemeral: true,
+      });
+    }
+
+    if (ms < 10 * 1000) {
+      return interaction.reply({
+        content: 'The giveaway must last at least 10 seconds.',
+        ephemeral: true,
+      });
+    }
+
+    if (ms > 30 * 24 * 60 * 60 * 1000) {
+      return interaction.reply({
+        content: 'The giveaway cannot last longer than 30 days.',
         ephemeral: true,
       });
     }
 
     const endTimestamp = Date.now() + ms;
-    const embed = buildGiveawayEmbed(prize, endTimestamp, winnerCount, 0);
 
-    await interaction.reply({ embeds: [embed], components: [buildJoinRow()] });
-    const message = await interaction.fetchReply();
-
-    const giveaways = loadGiveaways();
-    giveaways[message.id] = {
+    const giveaway = {
       prize,
       winnerCount,
       endTimestamp,
       channelId: interaction.channel.id,
+      hostId: interaction.user.id,
       entrants: [],
       ended: false,
     };
+
+    const embed = buildGiveawayEmbed(giveaway);
+
+    await interaction.reply({ embeds: [embed], components: [buildJoinRow(0)] });
+    const message = await interaction.fetchReply();
+
+    const giveaways = loadGiveaways();
+    giveaways[message.id] = giveaway;
     saveGiveaways(giveaways);
 
     scheduleGiveaway(interaction.client, message.id, ms);
+
+    // DM the host their giveaway (message) ID — needed for /greroll later.
+    try {
+      await interaction.user.send({
+        content:
+          `🎉 Your giveaway for **${prize}** has started in **${interaction.guild.name}**!\n` +
+          `**Giveaway ID:** \`${message.id}\`\n` +
+          `Keep this ID — you'll need it to run \`/greroll message_id:${message.id}\` if you ever need to reroll a winner.`,
+      });
+    } catch (err) {
+      console.error('Could not DM giveaway host (DMs may be closed):', err);
+    }
   },
 };
