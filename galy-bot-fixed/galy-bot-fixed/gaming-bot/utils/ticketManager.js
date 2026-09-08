@@ -366,9 +366,12 @@ async function createTicket(
     config.serviceTicketCategoryId
   */
 
-  const requestedParentId = isServiceTicket(categoryId)
-    ? config.serviceTicketCategoryId
-    : config.ticketCategoryId;
+  const requestedParentId =
+    (config.ticketCategoryParents &&
+      config.ticketCategoryParents[categoryId]) ||
+    (isServiceTicket(categoryId)
+      ? config.serviceTicketCategoryId
+      : config.ticketCategoryId);
 
   // Do not blindly pass a stale/non-category channel ID as parent.
   // If it is invalid, Discord can reject channel creation completely.
