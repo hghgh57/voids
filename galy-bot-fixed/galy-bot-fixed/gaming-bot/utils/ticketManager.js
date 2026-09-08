@@ -941,8 +941,6 @@ async function claimTicket(
    CLOSE TICKET
 ========================================================= */
 
-const pendingTicketClosures = new Map();
-
 async function closeTicket(interaction, reason) {
   const meta = parseTopic(interaction.channel.topic);
 
@@ -984,100 +982,31 @@ async function closeTicket(interaction, reason) {
     });
   }
 
-  if (pendingTicketClosures.has(interaction.channel.id)) {
-    return interaction.reply({
-      content: 'This ticket is already waiting for the ticket owner to confirm closure.',
-      ephemeral: true,
-    });
-  }
-
-  pendingTicketClosures.set(interaction.channel.id, {
-    reason: reason || null,
-    closerId: interaction.user.id,
-    requestedAt: Date.now(),
-  });
-
-  const confirmationEmbed = new EmbedBuilder()
-    .setTitle('🔒 Ticket Closure Requested')
+  const closingEmbed = new EmbedBuilder()
+    .setTitle('🔒 Ticket Closing')
     .setDescription(
-      `This ticket was marked for closure by ${interaction.user}.\n\n` +
-      `<@${meta.userId}>, **has your issue been solved and would you like to close this ticket?**\n\n` +
-      'Please choose **Yes, close it** or **No, keep it open** below.'
+      `This ticket is being closed by ${interaction.user}.` +
+      (reason ? `\n**Reason:** ${reason}` : '') +
+      '\n\n⏳ Generating transcript...'
     )
-    .setColor('#FEE75C')
-    .setFooter({ text: 'Only the person who opened this ticket can confirm the closure.' });
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('ticket_close_confirm')
-      .setLabel('Yes, close it')
-      .setEmoji('✅')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId('ticket_close_cancel')
-      .setLabel('No, keep it open')
-      .setEmoji('❌')
-      .setStyle(ButtonStyle.Secondary)
-  );
+    .setColor('#ED4245')
+    .setFooter({
+      text: `This channel will be deleted in ${config.closeCountdownSeconds || 5} seconds.`,
+    });
 
   if (interaction.deferred || interaction.replied) {
     await interaction.editReply({
-      embeds: [confirmationEmbed],
-      components: [row],
+      embeds: [closingEmbed],
+      components: [],
     });
   } else {
     await interaction.reply({
-      embeds: [confirmationEmbed],
-      components: [row],
-    });
-  }
-}
-
-async function finalizeCloseTicket(interaction) {
-  const meta = parseTopic(interaction.channel.topic);
-
-  if (!meta) {
-    return interaction.reply({
-      content: 'This does not look like a ticket channel.',
-      ephemeral: true,
+      embeds: [closingEmbed],
+      components: [],
     });
   }
 
-  if (interaction.user.id !== meta.userId) {
-    return interaction.reply({
-      content: 'Only the person who opened this ticket can confirm the closure.',
-      ephemeral: true,
-    });
-  }
-
-  const pending = pendingTicketClosures.get(interaction.channel.id);
-
-  if (!pending) {
-    return interaction.reply({
-      content: 'There is no pending closure request for this ticket.',
-      ephemeral: true,
-    });
-  }
-
-  pendingTicketClosures.delete(interaction.channel.id);
-
-  await interaction.update({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle('🔒 Ticket Closing')
-        .setDescription(
-          `The ticket owner confirmed that the issue has been solved.\n\nClosed by ${interaction.user}.` +
-          (pending.reason ? `\n**Reason:** ${pending.reason}` : '')
-        )
-        .setColor('#ED4245')
-        .setFooter({
-          text: `This channel will be deleted in ${config.closeCountdownSeconds || 5} seconds.`,
-        }),
-    ],
-    components: [],
-  });
-
-  const closerId = pending.closerId || interaction.user.id;
+  const closerId = interaction.user.id;
 
   incrementStat(
     interaction.guild,
@@ -1109,16 +1038,15 @@ async function finalizeCloseTicket(interaction) {
             { name: 'Channel', value: `#${interaction.channel.name}`, inline: true },
             { name: 'Opened by', value: `<@${meta.userId}>`, inline: true },
             { name: 'Closed by', value: `<@${closerId}>`, inline: true },
-            { name: 'Confirmed by', value: `${interaction.user}`, inline: true },
             { name: 'Category', value: meta.categoryId, inline: true }
           )
           .setColor('#ED4245')
           .setTimestamp();
 
-        if (pending.reason) {
+        if (reason) {
           logEmbed.addFields({
             name: 'Reason',
-            value: pending.reason.slice(0, 1024),
+            value: reason.slice(0, 1024),
           });
         }
 
@@ -1149,45 +1077,6 @@ async function finalizeCloseTicket(interaction) {
   }, (config.closeCountdownSeconds || 5) * 1000);
 }
 
-async function cancelCloseTicket(interaction) {
-  const meta = parseTopic(interaction.channel.topic);
-
-  if (!meta) {
-    return interaction.reply({
-      content: 'This does not look like a ticket channel.',
-      ephemeral: true,
-    });
-  }
-
-  if (interaction.user.id !== meta.userId) {
-    return interaction.reply({
-      content: 'Only the person who opened this ticket can cancel the closure.',
-      ephemeral: true,
-    });
-  }
-
-  if (!pendingTicketClosures.has(interaction.channel.id)) {
-    return interaction.reply({
-      content: 'There is no pending closure request for this ticket.',
-      ephemeral: true,
-    });
-  }
-
-  pendingTicketClosures.delete(interaction.channel.id);
-
-  await interaction.update({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle('✅ Ticket Kept Open')
-        .setDescription(
-          `No problem, ${interaction.user}. Your ticket will remain open and staff can continue helping you.`
-        )
-        .setColor('#57F287'),
-    ],
-    components: [buildTicketControlRow(false)],
-  });
-}
-
 
 /* =========================================================
    EXPORTS
@@ -1198,8 +1087,6 @@ module.exports = {
   createApplicationTicket,
   claimTicket,
   closeTicket,
-  finalizeCloseTicket,
-  cancelCloseTicket,
   parseTopic,
   buildTicketControlRow,
   findCategory,
