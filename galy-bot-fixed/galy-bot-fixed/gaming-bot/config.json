@@ -7,7 +7,7 @@
   ],
 "websiteApplicationChannelId": "1545269331984646235",
   
-  "staffTrackerChannelId": "",
+  "staffTrackerChannelId": "1537666867890491402",
   "changelogAnnounceChannelId": "1530572775255834696",
 
   "scammerReportChannelId": "1543776457061572628",
@@ -22,6 +22,16 @@
   "ticketCategoryId": "1527923229480583409",
   "transcriptLogChannelId": "1527245695612878998",
   "applicationTicketCategoryId": "1533068861174452255",
+
+  "ticketCategoryParents": {
+    "support": "1546692343464329306",
+    "giveaway_sponsor": "1546692509315375146",
+    "giveaway_claim": "1546692664655741029",
+    "spawner_sell": "1546692746407055501",
+    "spawner_buy": "1546692843123515492",
+    "partner": "1546692946324365353",
+    "missed gamble": "1546693015538503790"
+  },
 
   "welcomeChannelId": "1526915443326062735",
   "leaveChannelId": "1526915443326062735",
