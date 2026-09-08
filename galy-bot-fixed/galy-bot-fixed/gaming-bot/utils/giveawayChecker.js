@@ -451,7 +451,6 @@ async function fetchRecentMessages(
           ? {
               before
             }
-          }
           : {}),
 
       });
