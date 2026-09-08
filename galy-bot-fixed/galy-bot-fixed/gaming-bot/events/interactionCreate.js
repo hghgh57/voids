@@ -13,8 +13,6 @@ const {
   createTicket,
   claimTicket,
   closeTicket,
-  finalizeCloseTicket,
-  cancelCloseTicket,
   buildTicketControlRow,
 } = require('../utils/ticketManager');
 
@@ -1367,21 +1365,6 @@ module.exports = {
 
           return;
         }
-
-        /* =================================================
-           TICKET CLOSE CONFIRMATION
-        ================================================= */
-
-        if (interaction.customId === 'ticket_close_confirm') {
-          await finalizeCloseTicket(interaction);
-          return;
-        }
-
-        if (interaction.customId === 'ticket_close_cancel') {
-          await cancelCloseTicket(interaction);
-          return;
-        }
-
 
         /* =================================================
            CLOSE WITH REASON
