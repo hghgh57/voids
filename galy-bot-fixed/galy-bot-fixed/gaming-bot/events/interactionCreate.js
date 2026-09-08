@@ -35,6 +35,8 @@ const {
   loadGiveaways,
   saveGiveaways,
   buildGiveawayEmbed,
+  buildJoinRow,
+  buildLeaveRow,
 } = require('../utils/giveawayManager');
 
 const {
@@ -1162,51 +1164,46 @@ module.exports = {
           const userId =
             interaction.user.id;
 
-          const idx =
-            giveaway.entrants.indexOf(
+          if (
+            giveaway.entrants.includes(
               userId
-            );
+            )
+          ) {
 
-          if (idx === -1) {
-
-            giveaway.entrants.push(
-              userId
-            );
-
-            saveGiveaways(
-              giveaways
-            );
-
-            await interaction.reply({
+            return interaction.reply({
               content:
-                '🎉 You entered the giveaway!',
-              ephemeral: true,
-            });
-
-          } else {
-
-            giveaway.entrants.splice(
-              idx,
-              1
-            );
-
-            saveGiveaways(
-              giveaways
-            );
-
-            await interaction.reply({
-              content:
-                'You left the giveaway.',
+                'You already joined the giveaway.',
+              components: [
+                buildLeaveRow(
+                  interaction.message.id
+                ),
+              ],
               ephemeral: true,
             });
           }
 
+          giveaway.entrants.push(
+            userId
+          );
+
+          saveGiveaways(
+            giveaways
+          );
+
+          await interaction.reply({
+            content:
+              '🎉 You joined the giveaway!',
+            components: [
+              buildLeaveRow(
+                interaction.message.id
+              ),
+            ],
+            ephemeral: true,
+          });
+
           const updatedEmbed =
             buildGiveawayEmbed(
-              giveaway.prize,
-              giveaway.endTimestamp,
-              giveaway.winnerCount,
-              giveaway.entrants.length
+              giveaway
             );
 
           await interaction.message
@@ -1214,8 +1211,124 @@ module.exports = {
               embeds: [
                 updatedEmbed,
               ],
+              components: [
+                buildJoinRow(
+                  giveaway.entrants.length
+                ),
+              ],
             })
             .catch(() => {});
+
+          return;
+        }
+
+
+        /* =================================================
+           GIVEAWAY LEAVE
+        ================================================= */
+
+        if (
+          interaction.customId.startsWith(
+            'giveaway_leave_'
+          )
+        ) {
+
+          const messageId =
+            interaction.customId.replace(
+              'giveaway_leave_',
+              ''
+            );
+
+          const giveaways =
+            loadGiveaways();
+
+          const giveaway =
+            giveaways[messageId];
+
+          if (
+            !giveaway ||
+            giveaway.ended
+          ) {
+
+            return interaction.update({
+              content:
+                'This giveaway has ended.',
+              components: [],
+            });
+          }
+
+          if (
+            !Array.isArray(
+              giveaway.entrants
+            )
+          ) {
+            giveaway.entrants = [];
+          }
+
+          const userId =
+            interaction.user.id;
+
+          const idx =
+            giveaway.entrants.indexOf(
+              userId
+            );
+
+          if (idx === -1) {
+
+            return interaction.update({
+              content:
+                'You are not entered in this giveaway.',
+              components: [],
+            });
+          }
+
+          giveaway.entrants.splice(
+            idx,
+            1
+          );
+
+          saveGiveaways(
+            giveaways
+          );
+
+          await interaction.update({
+            content:
+              'You left the giveaway.',
+            components: [],
+          });
+
+          try {
+
+            const channel =
+              await interaction.client.channels.fetch(
+                giveaway.channelId
+              );
+
+            const message =
+              await channel.messages.fetch(
+                messageId
+              );
+
+            await message.edit({
+              embeds: [
+                buildGiveawayEmbed(
+                  giveaway
+                ),
+              ],
+              components: [
+                buildJoinRow(
+                  giveaway.entrants.length
+                ),
+              ],
+            });
+
+          } catch (error) {
+
+            console.error(
+              'Giveaway update error:',
+              error
+            );
+          }
 
           return;
         }
