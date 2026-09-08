@@ -14,6 +14,7 @@ const {
   buildDecisionRow,
 } = require('./applicationManager');
 const { incrementStat } = require('./staffTracker');
+const { findGiveawayWin } = require('./giveawayChecker');
 
 
 /* =========================================================
@@ -447,6 +448,54 @@ async function createTicket(
         buildTicketControlRow(),
       ],
     });
+
+
+    // GIVEAWAY CLAIM AUTO-CHECK
+    //
+    // Scans the configured giveaway channels for a message that mentions
+    // this user alongside winner/giveaway wording, so staff (and the
+    // ticket opener) get an immediate signal instead of silence.
+    if (categoryId === 'giveaway_claim') {
+      try {
+        const check = await findGiveawayWin(guild, user.id);
+
+        if (!check.configured) {
+          await channel.send({
+            content:
+              '⚠️ Giveaway auto-check is not configured (`giveawayCheckChannelIds` is empty) — ' +
+              'staff will need to verify this claim manually.',
+          });
+        } else if (check.found) {
+          const lines = check.results
+            .slice(0, 5)
+            .map(
+              (result) =>
+                `• **${result.prize}** — [jump to message](${result.messageUrl}) in <#${result.channelId}>`
+            );
+
+          const foundEmbed = new EmbedBuilder()
+            .setTitle('✅ Giveaway Win Found')
+            .setDescription(
+              `Found a matching win for ${user} in the giveaway channels:\n\n${lines.join('\n')}`
+            )
+            .setColor('#57F287');
+
+          await channel.send({ embeds: [foundEmbed] });
+        } else {
+          const notFoundEmbed = new EmbedBuilder()
+            .setTitle('❌ No Giveaway Win Found')
+            .setDescription(
+              `I couldn't find a matching giveaway win message for ${user} in the configured giveaway channels.\n\n` +
+              '-# This does not automatically mean the claim is invalid — staff should still verify manually.'
+            )
+            .setColor('#ED4245');
+
+          await channel.send({ embeds: [notFoundEmbed] });
+        }
+      } catch (err) {
+        console.error('[TICKET] Giveaway auto-check failed:', err);
+      }
+    }
 
 
     await interaction.editReply({
