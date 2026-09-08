@@ -1,666 +1,300 @@
-const config = require('../config.json');
+const fs = require('fs');
+const path = require('path');
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require('discord.js');
 
+const DATA_DIR = process.env.DATA_DIR || '/app/data';
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const DATA_FILE = path.join(DATA_DIR, 'giveaways.json');
 
-/* =========================================================
-   CONFIGURED GIVEAWAY CHANNELS
-========================================================= */
+// setTimeout only accepts a 32-bit signed int (~24.8 days) before it
+// overflows and fires immediately. Giveaways can run up to 30 days, so
+// long timers are chained instead of scheduled in one shot.
+const MAX_TIMEOUT_MS = 2147483647;
 
-function configuredChannelIds() {
-
-  return (
-    config.giveawayCheckChannelIds ||
-    []
-  ).filter(
-    (id) =>
-      id &&
-      typeof id === 'string' &&
-      !id.startsWith('PUT_')
-  );
-
+function scheduleTimeout(callback, delay) {
+  if (delay > MAX_TIMEOUT_MS) {
+    return setTimeout(
+      () => scheduleTimeout(callback, delay - MAX_TIMEOUT_MS),
+      MAX_TIMEOUT_MS
+    );
+  }
+  return setTimeout(callback, delay);
 }
 
 
 /* =========================================================
-   GET ALL MESSAGE TEXT
+   STORAGE
 ========================================================= */
 
-function messageText(
-  message
-) {
-
-  const parts = [];
-
-
-  if (
-    message.content
-  ) {
-
-    parts.push(
-      message.content
-    );
-
+function loadGiveaways() {
+  if (!fs.existsSync(DATA_FILE)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+  } catch {
+    return {};
   }
+}
 
-
-  for (
-    const embed of
-    message.embeds || []
-  ) {
-
-    if (
-      embed.title
-    ) {
-
-      parts.push(
-        embed.title
-      );
-
-    }
-
-
-    if (
-      embed.description
-    ) {
-
-      parts.push(
-        embed.description
-      );
-
-    }
-
-
-    for (
-      const field of
-      embed.fields || []
-    ) {
-
-      if (
-        field.name
-      ) {
-
-        parts.push(
-          field.name
-        );
-
-      }
-
-
-      if (
-        field.value
-      ) {
-
-        parts.push(
-          field.value
-        );
-
-      }
-
-    }
-
-  }
-
-
-  return parts.join(
-    '\n'
-  );
-
+function saveGiveaways(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
 
 /* =========================================================
-   CHECK IF MESSAGE LOOKS LIKE A WINNER MESSAGE
+   DURATION HELPERS
 ========================================================= */
 
-function looksLikeWinnerMessage(
-  message,
-  userId
-) {
-
-  /*
-   * GiveawayBot is a bot, so only inspect bot messages.
-   */
-
-  if (
-    !message?.author?.bot
-  ) {
-
-    return false;
-
-  }
-
-
-  const text =
-    messageText(
-      message
-    );
-
-
-  if (!text) {
-
-    return false;
-
-  }
-
-
-  const lower =
-    text.toLowerCase();
-
-
-  /*
-   * The user must actually be mentioned.
-   */
-
-  const mentionsUser =
-    message.mentions?.users?.has(
-      userId
-    ) ||
-
-    text.includes(
-      `<@${userId}>`
-    ) ||
-
-    text.includes(
-      `<@!${userId}>`
-    );
-
-
-  if (!mentionsUser) {
-
-    return false;
-
-  }
-
-
-  /*
-   * Words commonly used in winner announcements.
-   */
-
-  const winnerWords = [
-
-    'congratulations',
-
-    'congrats',
-
-    'winner',
-
-    'winners',
-
-    'you won',
-
-    'won',
-
-    'winner(s)',
-
-  ];
-
-
-  /*
-   * Words that make it much more likely
-   * that this is actually a giveaway result.
-   */
-
-  const giveawayWords = [
-
-    'giveaway',
-
-    'give away',
-
-    'prize',
-
-    'reroll',
-
-    'ended',
-
-  ];
-
-
-  const hasWinnerWord =
-    winnerWords.some(
-      (word) =>
-        lower.includes(
-          word
-        )
-    );
-
-
-  const hasGiveawayWord =
-    giveawayWords.some(
-      (word) =>
-        lower.includes(
-          word
-        )
-    );
-
-
-  return (
-    hasWinnerWord &&
-    hasGiveawayWord
-  );
-
-}
-
-
-/* =========================================================
-   EXTRACT PRIZE
-========================================================= */
-
-function extractPrize(
-  message,
-  userId
-) {
-
-  const texts = [];
-
-
-  if (
-    message.content
-  ) {
-
-    texts.push(
-      message.content
-    );
-
-  }
-
-
-  for (
-    const embed of
-    message.embeds || []
-  ) {
-
-    if (
-      embed.title
-    ) {
-
-      texts.push(
-        embed.title
-      );
-
-    }
-
-
-    if (
-      embed.description
-    ) {
-
-      texts.push(
-        embed.description
-      );
-
-    }
-
-
-    for (
-      const field of
-      embed.fields || []
-    ) {
-
-      if (
-        field.name
-      ) {
-
-        texts.push(
-          field.name
-        );
-
-      }
-
-
-      if (
-        field.value
-      ) {
-
-        texts.push(
-          field.value
-        );
-
-      }
-
-    }
-
-  }
-
-
-  const cleaned =
-    texts
-      .join('\n')
-      .replace(
-        new RegExp(
-          `<@!?${userId}>`,
-          'g'
-        ),
-        ''
-      )
-      .replace(
-        /\s+/g,
-        ' '
-      )
-      .trim();
-
-
-  const patterns = [
-
-    /you won\s+(.+?)(?:!|\.|$)/i,
-
-    /won\s+(.+?)(?:!|\.|$)/i,
-
-    /prize\s*[:\-]\s*(.+?)(?:\n|$)/i,
-
-  ];
-
-
-  for (
-    const pattern of
-    patterns
-  ) {
-
-    const match =
-      cleaned.match(
-        pattern
-      );
-
-
-    if (
-      match?.[1]
-    ) {
-
-      return match[1]
-        .replace(
-          /^[:\-\s]+/,
-          ''
-        )
-        .trim()
-        .slice(
-          0,
-          1024
-        );
-
-    }
-
-  }
-
-
-  /*
-   * Fallback to an embed title if possible.
-   */
-
-  for (
-    const embed of
-    message.embeds || []
-  ) {
-
-    if (
-      embed.title &&
-      !/giveaway|ended|winner/i.test(
-        embed.title
-      )
-    ) {
-
-      return embed.title.slice(
-        0,
-        1024
-      );
-
-    }
-
-  }
-
-
-  return (
-    'Giveaway prize found — ' +
-    'please check the giveaway message.'
-  );
-
-}
-
-
-/* =========================================================
-   FETCH RECENT MESSAGES
-========================================================= */
-
-async function fetchRecentMessages(
-  channel,
-  maxMessages = 500
-) {
-
-  const messages = [];
-
-  let before;
-
-
-  while (
-    messages.length <
-    maxMessages
-  ) {
-
-    const remaining =
-      Math.min(
-        100,
-        maxMessages -
-          messages.length
-      );
-
-
-    const batch =
-      await channel.messages.fetch({
-
-        limit:
-          remaining,
-
-        ...(before
-          ? {
-              before
-            }
-          : {}),
-
-      });
-
-
-    if (
-      !batch.size
-    ) {
-
-      break;
-
-    }
-
-
-    messages.push(
-      ...batch.values()
-    );
-
-
-    const oldest =
-      batch.last();
-
-
-    if (!oldest) {
-
-      break;
-
-    }
-
-
-    before =
-      oldest.id;
-
-
-    if (
-      batch.size <
-      remaining
-    ) {
-
-      break;
-
-    }
-
-  }
-
-
-  return messages;
-
-}
-
-
-/* =========================================================
-   FIND GIVEAWAY WIN
-========================================================= */
-
-async function findGiveawayWin(
-  guild,
-  userId
-) {
-
-  const channelIds =
-    configuredChannelIds();
-
-
-  if (
-    !channelIds.length
-  ) {
-
-    return {
-
-      configured:
-        false,
-
-      found:
-        false,
-
-      results:
-        [],
-
-    };
-
-  }
-
-
-  const results = [];
-
-
-  for (
-    const channelId of
-    channelIds
-  ) {
-
-    const channel =
-      await guild.channels
-        .fetch(
-          channelId
-        )
-        .catch(
-          () => null
-        );
-
-
-    if (
-      !channel ||
-      !channel.isTextBased()
-    ) {
-
-      continue;
-
-    }
-
-
-    let messages;
-
-
-    try {
-
-      messages =
-        await fetchRecentMessages(
-          channel,
-          500
-        );
-
-    } catch (error) {
-
-      console.error(
-        `[GIVEAWAY CHECK] Failed to read #${channel.name}:`,
-        error
-      );
-
-      continue;
-
-    }
-
-
-    for (
-      const message of
-      messages
-    ) {
-
-      if (
-        !looksLikeWinnerMessage(
-          message,
-          userId
-        )
-      ) {
-
-        continue;
-
-      }
-
-
-      results.push({
-
-        channelId:
-          channel.id,
-
-        channelName:
-          channel.name,
-
-        messageId:
-          message.id,
-
-        messageUrl:
-          message.url,
-
-        prize:
-          extractPrize(
-            message,
-            userId
-          ),
-
-        createdTimestamp:
-          message.createdTimestamp,
-
-      });
-
-    }
-
-  }
-
-
-  /*
-   * Newest wins first.
-   */
-
-  results.sort(
-    (a, b) =>
-      b.createdTimestamp -
-      a.createdTimestamp
-  );
-
-
-  return {
-
-    configured:
-      true,
-
-    found:
-      results.length > 0,
-
-    results,
-
+function parseDuration(str) {
+  const match = str.toLowerCase().trim().match(/^(\d+)\s*(s|m|h|d|w)$/);
+  if (!match) return null;
+
+  const num = parseInt(match[1], 10);
+  const unit = match[2];
+
+  const multipliers = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+    w: 7 * 24 * 60 * 60 * 1000,
   };
 
+  return num * multipliers[unit];
+}
+
+// Discord's <t:...:R> tag only updates in coarse steps (minutes at a time
+// past the first minute), so on short giveaways it can look frozen. This
+// builds a literal "Xm Ys" string from the actual remaining time, so it
+// genuinely counts down every time we refresh the embed.
+function formatTimeLeft(ms) {
+  if (ms <= 0) return '0s';
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes) parts.push(`${minutes}m`);
+  if (seconds || parts.length === 0) parts.push(`${seconds}s`);
+
+  return parts.slice(0, 2).join(' ');
 }
 
 
+/* =========================================================
+   EMBED / BUTTONS
+========================================================= */
+
+function buildGiveawayEmbed(giveaway) {
+  const ended = !!giveaway.ended;
+  const hostedByLine = giveaway.hostId ? `**Hosted by:** <@${giveaway.hostId}>\n` : '';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🎉 ${giveaway.prize}`)
+    .setColor(ended ? '#2F3136' : '#89CFF0')
+    .setTimestamp(giveaway.endTimestamp);
+
+  if (ended) {
+    embed.setDescription(
+      giveaway.winners && giveaway.winners.length > 0
+        ? `**Winner(s):** ${giveaway.winners.map((id) => `<@${id}>`).join(', ')}\n\n${hostedByLine}`
+        : `No valid entrants — no winner could be chosen.\n\n${hostedByLine}`
+    );
+    embed.setFooter({ text: 'Giveaway ended' });
+  } else {
+    const timeLeft = formatTimeLeft(giveaway.endTimestamp - Date.now());
+
+    embed.setDescription(
+      'Click below to enter!\n\n' +
+      `**Winners:** ${giveaway.winnerCount}\n` +
+      hostedByLine +
+      `**Ends:** \`${timeLeft}\`\n\n` +
+      `<t:${Math.floor(giveaway.endTimestamp / 1000)}:F>`
+    );
+    embed.setFooter({ text: 'Good luck!' });
+  }
+
+  return embed;
+}
+
+function buildJoinRow(entrantCount = 0, disabled = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('giveaway_join')
+      .setLabel(`🎉 Join Giveaway (${entrantCount})`)
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(disabled)
+  );
+}
+
+// Shown ephemerally to a user right after they join, so they have a quick
+// way to back out without hunting for a toggle on the public message.
+function buildLeaveRow(messageId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`giveaway_leave_${messageId}`)
+      .setLabel('Leave Giveaway')
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+
+/* =========================================================
+   WINNER SELECTION
+========================================================= */
+
+function pickWinners(entrants, count) {
+  const pool = [...entrants];
+  const winners = [];
+  const num = Math.min(count, pool.length);
+
+  for (let i = 0; i < num; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    winners.push(pool.splice(idx, 1)[0]);
+  }
+
+  return winners;
+}
+
+
+/* =========================================================
+   LIVE COUNTDOWN REFRESH
+
+   Discord's <t:...:F> tag DOES tick down on its own client-side, but if
+   the message never gets edited some clients cache/stop refreshing it
+   and it visually "sticks". We force a re-render every 9s so it never
+   freezes, on top of the live client-side ticking.
+========================================================= */
+
+const refreshIntervals = new Map();
+
+function stopCountdownRefresh(messageId) {
+  const existing = refreshIntervals.get(messageId);
+  if (existing) {
+    clearInterval(existing);
+    refreshIntervals.delete(messageId);
+  }
+}
+
+function startCountdownRefresh(client, messageId) {
+  stopCountdownRefresh(messageId);
+
+  const interval = setInterval(async () => {
+    const giveaways = loadGiveaways();
+    const giveaway = giveaways[messageId];
+
+    if (!giveaway || giveaway.ended || Date.now() >= giveaway.endTimestamp) {
+      stopCountdownRefresh(messageId);
+      return;
+    }
+
+    try {
+      const channel = await client.channels.fetch(giveaway.channelId);
+      const message = await channel.messages.fetch(messageId);
+
+      await message.edit({
+        embeds: [buildGiveawayEmbed(giveaway)],
+        components: [buildJoinRow((giveaway.entrants || []).length)],
+      });
+    } catch (err) {
+      console.error('Giveaway countdown refresh error:', err);
+    }
+  }, 9 * 1000);
+
+  refreshIntervals.set(messageId, interval);
+}
+
+
+/* =========================================================
+   END / SCHEDULE / REARM
+========================================================= */
+
+async function endGiveaway(client, messageId) {
+  const giveaways = loadGiveaways();
+  const giveaway = giveaways[messageId];
+  if (!giveaway || giveaway.ended) return;
+
+  stopCountdownRefresh(messageId);
+
+  try {
+    const channel = await client.channels.fetch(giveaway.channelId);
+    const message = await channel.messages.fetch(messageId);
+
+    const winners = pickWinners(giveaway.entrants || [], giveaway.winnerCount);
+    giveaway.ended = true;
+    giveaway.winners = winners;
+    giveaways[messageId] = giveaway;
+    saveGiveaways(giveaways);
+
+    await message.edit({
+      embeds: [buildGiveawayEmbed(giveaway)],
+      components: [buildJoinRow((giveaway.entrants || []).length, true)],
+    });
+
+    if (winners.length > 0) {
+      const claimRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`giveaway_prize_claim_${messageId}`)
+          .setLabel('🎁 Claim Prize')
+          .setStyle(ButtonStyle.Success)
+      );
+
+      await channel.send({
+        content: `🎉 Congratulations ${winners.map((id) => `<@${id}>`).join(', ')}! You won **${giveaway.prize}**!`,
+        components: [claimRow],
+      });
+    } else {
+      await channel.send({ content: `No one entered the giveaway for **${giveaway.prize}**.` });
+    }
+  } catch (err) {
+    console.error('Failed to end giveaway:', err);
+  }
+}
+
+function scheduleGiveaway(client, messageId, msUntilEnd) {
+  scheduleTimeout(() => endGiveaway(client, messageId), msUntilEnd);
+  startCountdownRefresh(client, messageId);
+}
+
+function rearmActiveGiveaways(client) {
+  const giveaways = loadGiveaways();
+  const now = Date.now();
+
+  for (const [messageId, giveaway] of Object.entries(giveaways)) {
+    if (giveaway.ended) continue;
+
+    const msLeft = giveaway.endTimestamp - now;
+    if (msLeft <= 0) {
+      endGiveaway(client, messageId);
+    } else {
+      scheduleGiveaway(client, messageId, msLeft);
+    }
+  }
+}
+
+
+/* =========================================================
+   EXPORTS
+========================================================= */
+
 module.exports = {
-
-  findGiveawayWin,
-
+  loadGiveaways,
+  saveGiveaways,
+  parseDuration,
+  buildGiveawayEmbed,
+  buildJoinRow,
+  buildLeaveRow,
+  pickWinners,
+  endGiveaway,
+  scheduleGiveaway,
+  rearmActiveGiveaways,
 };
