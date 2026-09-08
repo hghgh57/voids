@@ -1,292 +1,544 @@
-const fs = require('fs');
-const path = require('path');
 const {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-} = require('discord.js');
+  PermissionFlagsBits
+} = require("discord.js");
 
-const DATA_DIR = process.env.DATA_DIR || '/app/data';
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-const DATA_FILE = path.join(DATA_DIR, 'giveaways.json');
+const fs = require("fs");
+const path = require("path");
 
-// setTimeout only accepts a 32-bit signed int (~24.8 days) before it
-// overflows and fires immediately. Giveaways can run up to 30 days, so
-// long timers are chained instead of scheduled in one shot.
-const MAX_TIMEOUT_MS = 2147483647;
+const DATA_DIR = path.join(__dirname, "..", "data");
+const GIVEAWAY_FILE = path.join(DATA_DIR, "giveaways.json");
 
-function scheduleTimeout(callback, delay) {
-  if (delay > MAX_TIMEOUT_MS) {
-    return setTimeout(
-      () => scheduleTimeout(callback, delay - MAX_TIMEOUT_MS),
-      MAX_TIMEOUT_MS
-    );
-  }
-  return setTimeout(callback, delay);
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-
-/* =========================================================
-   STORAGE
-========================================================= */
-
 function loadGiveaways() {
-  if (!fs.existsSync(DATA_FILE)) return {};
   try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-  } catch {
+    if (!fs.existsSync(GIVEAWAY_FILE)) {
+      fs.writeFileSync(GIVEAWAY_FILE, JSON.stringify({}, null, 2));
+      return {};
+    }
+
+    return JSON.parse(fs.readFileSync(GIVEAWAY_FILE, "utf8"));
+  } catch (error) {
+    console.error("[GIVEAWAY] Failed to load giveaways:", error);
     return {};
   }
 }
 
-function saveGiveaways(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+function saveGiveaways(giveaways) {
+  try {
+    fs.writeFileSync(
+      GIVEAWAY_FILE,
+      JSON.stringify(giveaways, null, 2)
+    );
+  } catch (error) {
+    console.error("[GIVEAWAY] Failed to save giveaways:", error);
+  }
 }
 
+function getGiveaways() {
+  return loadGiveaways();
+}
 
-/* =========================================================
-   DURATION HELPERS
-========================================================= */
+function getGiveaway(messageId) {
+  const giveaways = loadGiveaways();
+  return giveaways[messageId] || null;
+}
 
-function parseDuration(str) {
-  const match = str.toLowerCase().trim().match(/^(\d+)\s*(s|m|h|d|w)$/);
-  if (!match) return null;
+function createGiveaway(data) {
+  const giveaways = loadGiveaways();
 
-  const num = parseInt(match[1], 10);
-  const unit = match[2];
-
-  const multipliers = {
-    s: 1000,
-    m: 60 * 1000,
-    h: 60 * 60 * 1000,
-    d: 24 * 60 * 60 * 1000,
-    w: 7 * 24 * 60 * 60 * 1000,
+  giveaways[data.messageId] = {
+    ...data,
+    entries: data.entries || [],
+    ended: false,
+    createdAt: Date.now()
   };
 
-  return num * multipliers[unit];
+  saveGiveaways(giveaways);
+
+  return giveaways[data.messageId];
 }
 
-// Discord's <t:...:R> tag only updates in coarse steps (minutes at a time
-// past the first minute), so on short giveaways it can look frozen. This
-// builds a literal "Xm Ys" string from the actual remaining time, so it
-// genuinely counts down every time we refresh the embed.
-function formatTimeLeft(ms) {
-  if (ms <= 0) return '0s';
+function updateGiveaway(messageId, data) {
+  const giveaways = loadGiveaways();
 
-  const totalSeconds = Math.floor(ms / 1000);
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
+  if (!giveaways[messageId]) {
+    return null;
+  }
 
-  const parts = [];
-  if (days) parts.push(`${days}d`);
-  if (hours) parts.push(`${hours}h`);
-  if (minutes) parts.push(`${minutes}m`);
-  if (seconds || parts.length === 0) parts.push(`${seconds}s`);
+  giveaways[messageId] = {
+    ...giveaways[messageId],
+    ...data
+  };
 
-  return parts.slice(0, 2).join(' ');
+  saveGiveaways(giveaways);
+
+  return giveaways[messageId];
 }
 
+function deleteGiveaway(messageId) {
+  const giveaways = loadGiveaways();
 
-/* =========================================================
-   EMBED / BUTTONS
-========================================================= */
+  if (!giveaways[messageId]) {
+    return false;
+  }
+
+  delete giveaways[messageId];
+  saveGiveaways(giveaways);
+
+  return true;
+}
+
+function addEntry(messageId, userId) {
+  const giveaway = getGiveaway(messageId);
+
+  if (!giveaway) {
+    return {
+      success: false,
+      reason: "not_found"
+    };
+  }
+
+  if (giveaway.ended) {
+    return {
+      success: false,
+      reason: "ended"
+    };
+  }
+
+  if (!Array.isArray(giveaway.entries)) {
+    giveaway.entries = [];
+  }
+
+  if (giveaway.entries.includes(userId)) {
+    return {
+      success: false,
+      reason: "already_entered"
+    };
+  }
+
+  giveaway.entries.push(userId);
+
+  updateGiveaway(messageId, {
+    entries: giveaway.entries
+  });
+
+  return {
+    success: true,
+    giveaway
+  };
+}
+
+function removeEntry(messageId, userId) {
+  const giveaway = getGiveaway(messageId);
+
+  if (!giveaway) {
+    return {
+      success: false,
+      reason: "not_found"
+    };
+  }
+
+  if (!Array.isArray(giveaway.entries)) {
+    giveaway.entries = [];
+  }
+
+  const index = giveaway.entries.indexOf(userId);
+
+  if (index === -1) {
+    return {
+      success: false,
+      reason: "not_entered"
+    };
+  }
+
+  giveaway.entries.splice(index, 1);
+
+  updateGiveaway(messageId, {
+    entries: giveaway.entries
+  });
+
+  return {
+    success: true,
+    giveaway
+  };
+}
+
+function pickWinners(entries, amount) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return [];
+  }
+
+  const shuffled = [...entries];
+
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+
+    [shuffled[i], shuffled[j]] = [
+      shuffled[j],
+      shuffled[i]
+    ];
+  }
+
+  return shuffled.slice(
+    0,
+    Math.min(amount, shuffled.length)
+  );
+}
+
+function formatTime(timestamp) {
+  if (!timestamp) {
+    return "Unknown";
+  }
+
+  return `<t:${Math.floor(timestamp / 1000)}:R>`;
+}
 
 function buildGiveawayEmbed(giveaway) {
-  const ended = !!giveaway.ended;
-  const hostedByLine = giveaway.hostId ? `**Hosted by:** <@${giveaway.hostId}>\n` : '';
-
   const embed = new EmbedBuilder()
-    .setTitle(`🎉 ${giveaway.prize}`)
-    .setColor(ended ? '#2F3136' : '#89CFF0')
-    .setTimestamp(giveaway.endTimestamp);
+    .setTitle(giveaway.title || "Giveaway")
+    .setDescription(
+      giveaway.description ||
+        "Click the button below to enter the giveaway!"
+    )
+    .setTimestamp();
 
-  if (ended) {
-    embed.setDescription(
-      giveaway.winners && giveaway.winners.length > 0
-        ? `**Winner(s):** ${giveaway.winners.map((id) => `<@${id}>`).join(', ')}\n\n${hostedByLine}`
-        : `No valid entrants — no winner could be chosen.\n\n${hostedByLine}`
-    );
-    embed.setFooter({ text: 'Giveaway ended' });
-  } else {
-    const timeLeft = formatTimeLeft(giveaway.endTimestamp - Date.now());
+  if (giveaway.prize) {
+    embed.addFields({
+      name: "Prize",
+      value: String(giveaway.prize),
+      inline: true
+    });
+  }
 
-    embed.setDescription(
-      'Click below to enter!\n\n' +
-      `**Winners:** ${giveaway.winnerCount}\n` +
-      hostedByLine +
-      `**Ends:** \`${timeLeft}\`\n\n` +
-      `<t:${Math.floor(giveaway.endTimestamp / 1000)}:F>`
-    );
-    embed.setFooter({ text: 'Good luck!' });
+  if (giveaway.winners) {
+    embed.addFields({
+      name: "Winners",
+      value: String(giveaway.winners),
+      inline: true
+    });
+  }
+
+  if (giveaway.endsAt) {
+    embed.addFields({
+      name: "Ends",
+      value: formatTime(giveaway.endsAt),
+      inline: true
+    });
+  }
+
+  const entries = Array.isArray(giveaway.entries)
+    ? giveaway.entries.length
+    : 0;
+
+  embed.addFields({
+    name: "Entries",
+    value: String(entries),
+    inline: true
+  });
+
+  if (giveaway.hostedBy) {
+    embed.setFooter({
+      text: `Hosted by ${giveaway.hostedBy}`
+    });
   }
 
   return embed;
 }
 
-function buildJoinRow(entrantCount = 0, disabled = false) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('giveaway_join')
-      .setLabel(`🎉 Join Giveaway (${entrantCount})`)
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(disabled)
-  );
+function buildGiveawayButtons(giveaway) {
+  const row = new ActionRowBuilder();
+
+  if (!giveaway.ended) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`giveaway_join_${giveaway.messageId}`)
+        .setLabel("Enter Giveaway")
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji("🎉"),
+
+      new ButtonBuilder()
+        .setCustomId(`giveaway_leave_${giveaway.messageId}`)
+        .setLabel("Leave Giveaway")
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji("🚪")
+    );
+  }
+
+  return row;
 }
 
-// Shown ephemerally to a user right after they join, so they have a quick
-// way to back out without hunting for a toggle on the public message.
-function buildLeaveRow(messageId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`giveaway_leave_${messageId}`)
-      .setLabel('Leave Giveaway')
-      .setStyle(ButtonStyle.Danger)
-  );
+async function updateGiveawayMessage(client, messageId) {
+  const giveaway = getGiveaway(messageId);
+
+  if (!giveaway) {
+    return false;
+  }
+
+  try {
+    const channel = await client.channels.fetch(
+      giveaway.channelId
+    );
+
+    if (!channel || !channel.isTextBased()) {
+      return false;
+    }
+
+    const message = await channel.messages.fetch(
+      giveaway.messageId
+    );
+
+    if (!message) {
+      return false;
+    }
+
+    await message.edit({
+      embeds: [buildGiveawayEmbed(giveaway)],
+      components: giveaway.ended
+        ? []
+        : [buildGiveawayButtons(giveaway)]
+    });
+
+    return true;
+  } catch (error) {
+    console.error(
+      `[GIVEAWAY] Failed to update message ${messageId}:`,
+      error
+    );
+
+    return false;
+  }
 }
 
+async function finishGiveaway(client, messageId) {
+  const giveaway = getGiveaway(messageId);
 
-/* =========================================================
-   WINNER SELECTION
-========================================================= */
+  if (!giveaway || giveaway.ended) {
+    return null;
+  }
 
-function pickWinners(entrants, count) {
-  const pool = [...entrants];
-  const winners = [];
-  const num = Math.min(count, pool.length);
+  const winners = pickWinners(
+    giveaway.entries || [],
+    Number(giveaway.winners) || 1
+  );
 
-  for (let i = 0; i < num; i++) {
-    const idx = Math.floor(Math.random() * pool.length);
-    winners.push(pool.splice(idx, 1)[0]);
+  updateGiveaway(messageId, {
+    ended: true,
+    winners,
+    endedAt: Date.now()
+  });
+
+  try {
+    const channel = await client.channels.fetch(
+      giveaway.channelId
+    );
+
+    if (channel && channel.isTextBased()) {
+      const message = await channel.messages.fetch(
+        giveaway.messageId
+      );
+
+      if (message) {
+        const winnerText =
+          winners.length > 0
+            ? winners.map(id => `<@${id}>`).join(", ")
+            : "No valid winners.";
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🎉 ${giveaway.title || "Giveaway"} — ENDED`)
+          .setDescription(
+            `**Prize:** ${giveaway.prize || "Unknown"}\n\n` +
+            `**Winner(s):** ${winnerText}\n\n` +
+            `**Entries:** ${
+              Array.isArray(giveaway.entries)
+                ? giveaway.entries.length
+                : 0
+            }`
+          )
+          .setTimestamp();
+
+        await message.edit({
+          embeds: [embed],
+          components: []
+        });
+
+        if (winners.length > 0) {
+          await channel.send(
+            `🎉 Congratulations ${winnerText}! You won **${
+              giveaway.title || giveaway.prize || "the giveaway"
+            }**!`
+          );
+        } else {
+          await channel.send(
+            `❌ The giveaway **${
+              giveaway.title || giveaway.prize || "giveaway"
+            }** ended with no valid entries.`
+          );
+        }
+      }
+    }
+  } catch (error) {
+    console.error(
+      `[GIVEAWAY] Failed to finish giveaway ${messageId}:`,
+      error
+    );
   }
 
   return winners;
 }
 
-
-/* =========================================================
-   LIVE COUNTDOWN REFRESH
-
-   Discord's <t:...:F> tag DOES tick down on its own client-side, but if
-   the message never gets edited some clients cache/stop refreshing it
-   and it visually "sticks". We force a re-render every 9s so it never
-   freezes, on top of the live client-side ticking.
-========================================================= */
-
-const refreshIntervals = new Map();
-
-function stopCountdownRefresh(messageId) {
-  const existing = refreshIntervals.get(messageId);
-  if (existing) {
-    clearInterval(existing);
-    refreshIntervals.delete(messageId);
-  }
-}
-
-function startCountdownRefresh(client, messageId) {
-  stopCountdownRefresh(messageId);
-
-  const interval = setInterval(async () => {
-    const giveaways = loadGiveaways();
-    const giveaway = giveaways[messageId];
-
-    if (!giveaway || giveaway.ended || Date.now() >= giveaway.endTimestamp) {
-      stopCountdownRefresh(messageId);
-      return;
-    }
-
-    try {
-      const channel = await client.channels.fetch(giveaway.channelId);
-      const message = await channel.messages.fetch(messageId);
-
-      await message.edit({
-        embeds: [buildGiveawayEmbed(giveaway)],
-        components: [buildJoinRow((giveaway.entrants || []).length)],
-      });
-    } catch (err) {
-      console.error('Giveaway countdown refresh error:', err);
-    }
-  }, 9 * 1000);
-
-  refreshIntervals.set(messageId, interval);
-}
-
-
-/* =========================================================
-   END / SCHEDULE / REARM
-========================================================= */
-
-async function endGiveaway(client, messageId) {
-  const giveaways = loadGiveaways();
-  const giveaway = giveaways[messageId];
-  if (!giveaway || giveaway.ended) return;
-
-  stopCountdownRefresh(messageId);
-
-  try {
-    const channel = await client.channels.fetch(giveaway.channelId);
-    const message = await channel.messages.fetch(messageId);
-
-    const winners = pickWinners(giveaway.entrants || [], giveaway.winnerCount);
-    giveaway.ended = true;
-    giveaway.winners = winners;
-    giveaways[messageId] = giveaway;
-    saveGiveaways(giveaways);
-
-    await message.edit({
-      embeds: [buildGiveawayEmbed(giveaway)],
-      components: [buildJoinRow((giveaway.entrants || []).length, true)],
-    });
-
-    if (winners.length > 0) {
-      await channel.send({
-        content: `🎉 Congratulations ${winners.map((id) => `<@${id}>`).join(', ')}! You won **${giveaway.prize}**!`,
-      });
-    } else {
-      await channel.send({ content: `No one entered the giveaway for **${giveaway.prize}**.` });
-    }
-  } catch (err) {
-    console.error('Failed to end giveaway:', err);
-  }
-}
-
-function scheduleGiveaway(client, messageId, msUntilEnd) {
-  scheduleTimeout(() => endGiveaway(client, messageId), msUntilEnd);
-  startCountdownRefresh(client, messageId);
-}
-
-function rearmActiveGiveaways(client) {
+async function checkGiveaways(client) {
   const giveaways = loadGiveaways();
   const now = Date.now();
 
-  for (const [messageId, giveaway] of Object.entries(giveaways)) {
-    if (giveaway.ended) continue;
-
-    const msLeft = giveaway.endTimestamp - now;
-    if (msLeft <= 0) {
-      endGiveaway(client, messageId);
-    } else {
-      scheduleGiveaway(client, messageId, msLeft);
+  for (const [messageId, giveaway] of Object.entries(
+    giveaways
+  )) {
+    if (
+      giveaway &&
+      !giveaway.ended &&
+      giveaway.endsAt &&
+      Number(giveaway.endsAt) <= now
+    ) {
+      await finishGiveaway(client, messageId);
     }
   }
 }
 
+async function fetchRecentMessages(
+  channel,
+  maxMessages = 500
+) {
+  const messages = [];
 
-/* =========================================================
-   EXPORTS
-========================================================= */
+  let before;
+
+  while (
+    messages.length <
+    maxMessages
+  ) {
+    const remaining =
+      Math.min(
+        100,
+        maxMessages -
+          messages.length
+      );
+
+    const batch =
+      await channel.messages.fetch({
+        limit: remaining,
+
+        ...(before
+          ? {
+              before
+            }
+          : {})
+      });
+
+    if (!batch.size) {
+      break;
+    }
+
+    messages.push(
+      ...batch.values()
+    );
+
+    const oldest =
+      batch.last();
+
+    if (!oldest) {
+      break;
+    }
+
+    before = oldest.id;
+
+    if (
+      batch.size <
+      remaining
+    ) {
+      break;
+    }
+  }
+
+  return messages;
+}
+
+async function recoverGiveaways(client) {
+  const giveaways = loadGiveaways();
+
+  for (const [messageId, giveaway] of Object.entries(
+    giveaways
+  )) {
+    if (!giveaway || giveaway.ended) {
+      continue;
+    }
+
+    try {
+      await updateGiveawayMessage(
+        client,
+        messageId
+      );
+    } catch (error) {
+      console.error(
+        `[GIVEAWAY] Failed to recover ${messageId}:`,
+        error
+      );
+    }
+  }
+}
+
+function startGiveawayChecker(client) {
+  checkGiveaways(client).catch(error => {
+    console.error(
+      "[GIVEAWAY] Initial giveaway check failed:",
+      error
+    );
+  });
+
+  setInterval(() => {
+    checkGiveaways(client).catch(error => {
+      console.error(
+        "[GIVEAWAY] Giveaway check failed:",
+        error
+      );
+    });
+  }, 15000);
+
+  recoverGiveaways(client).catch(error => {
+    console.error(
+      "[GIVEAWAY] Giveaway recovery failed:",
+      error
+    );
+  });
+
+  console.log(
+    "[GIVEAWAY] Giveaway checker started."
+  );
+}
 
 module.exports = {
   loadGiveaways,
   saveGiveaways,
-  parseDuration,
-  buildGiveawayEmbed,
-  buildJoinRow,
-  buildLeaveRow,
+  getGiveaways,
+  getGiveaway,
+  createGiveaway,
+  updateGiveaway,
+  deleteGiveaway,
+  addEntry,
+  removeEntry,
   pickWinners,
-  endGiveaway,
-  scheduleGiveaway,
-  rearmActiveGiveaways,
+  buildGiveawayEmbed,
+  buildGiveawayButtons,
+  updateGiveawayMessage,
+  finishGiveaway,
+  checkGiveaways,
+  fetchRecentMessages,
+  recoverGiveaways,
+  startGiveawayChecker
 };
