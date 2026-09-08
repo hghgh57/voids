@@ -1,6 +1,12 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { isMod } = require('../utils/permissions');
-const { loadGiveaways, saveGiveaways, pickWinners } = require('../utils/giveawayManager');
+const {
+  loadGiveaways,
+  saveGiveaways,
+  pickWinners,
+  buildGiveawayEmbed,
+  buildJoinRow,
+} = require('../utils/giveawayManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -26,13 +32,28 @@ module.exports = {
       });
     }
 
-    const newWinners = pickWinners(giveaway.entrants, giveaway.winnerCount);
+    const newWinners = pickWinners(giveaway.entrants || [], giveaway.winnerCount);
+
+    if (newWinners.length === 0) {
+      return interaction.reply({ content: 'No valid entrants to reroll a winner from.', ephemeral: true });
+    }
+
     giveaway.winners = newWinners;
     giveaways[messageId] = giveaway;
     saveGiveaways(giveaways);
 
-    if (newWinners.length === 0) {
-      return interaction.reply({ content: 'No valid entrants to reroll a winner from.' });
+    try {
+      const channel = await interaction.client.channels.fetch(giveaway.channelId);
+      const message = await channel.messages.fetch(messageId).catch(() => null);
+
+      if (message) {
+        await message.edit({
+          embeds: [buildGiveawayEmbed(giveaway)],
+          components: [buildJoinRow((giveaway.entrants || []).length, true)],
+        });
+      }
+    } catch (err) {
+      console.error('Could not update the giveaway message after reroll:', err);
     }
 
     await interaction.reply({
