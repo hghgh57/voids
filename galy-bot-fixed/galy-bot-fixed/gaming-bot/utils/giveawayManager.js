@@ -1,428 +1,438 @@
-const {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  PermissionFlagsBits
-} = require("discord.js");
-
-const fs = require("fs");
-const path = require("path");
-
-const DATA_DIR = path.join(__dirname, "..", "data");
-const GIVEAWAY_FILE = path.join(DATA_DIR, "giveaways.json");
-
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-function loadGiveaways() {
-  try {
-    if (!fs.existsSync(GIVEAWAY_FILE)) {
-      fs.writeFileSync(GIVEAWAY_FILE, JSON.stringify({}, null, 2));
-      return {};
-    }
-
-    return JSON.parse(fs.readFileSync(GIVEAWAY_FILE, "utf8"));
-  } catch (error) {
-    console.error("[GIVEAWAY] Failed to load giveaways:", error);
-    return {};
-  }
-}
-
-function saveGiveaways(giveaways) {
-  try {
-    fs.writeFileSync(
-      GIVEAWAY_FILE,
-      JSON.stringify(giveaways, null, 2)
-    );
-  } catch (error) {
-    console.error("[GIVEAWAY] Failed to save giveaways:", error);
-  }
-}
-
-function getGiveaways() {
-  return loadGiveaways();
-}
-
-function getGiveaway(messageId) {
-  const giveaways = loadGiveaways();
-  return giveaways[messageId] || null;
-}
-
-function createGiveaway(data) {
-  const giveaways = loadGiveaways();
-
-  giveaways[data.messageId] = {
-    ...data,
-    entries: data.entries || [],
-    ended: false,
-    createdAt: Date.now()
-  };
-
-  saveGiveaways(giveaways);
-
-  return giveaways[data.messageId];
-}
-
-function updateGiveaway(messageId, data) {
-  const giveaways = loadGiveaways();
-
-  if (!giveaways[messageId]) {
-    return null;
-  }
-
-  giveaways[messageId] = {
-    ...giveaways[messageId],
-    ...data
-  };
-
-  saveGiveaways(giveaways);
-
-  return giveaways[messageId];
-}
-
-function deleteGiveaway(messageId) {
-  const giveaways = loadGiveaways();
-
-  if (!giveaways[messageId]) {
-    return false;
-  }
-
-  delete giveaways[messageId];
-  saveGiveaways(giveaways);
-
-  return true;
-}
-
-function addEntry(messageId, userId) {
-  const giveaway = getGiveaway(messageId);
-
-  if (!giveaway) {
-    return {
-      success: false,
-      reason: "not_found"
-    };
-  }
-
-  if (giveaway.ended) {
-    return {
-      success: false,
-      reason: "ended"
-    };
-  }
-
-  if (!Array.isArray(giveaway.entries)) {
-    giveaway.entries = [];
-  }
-
-  if (giveaway.entries.includes(userId)) {
-    return {
-      success: false,
-      reason: "already_entered"
-    };
-  }
-
-  giveaway.entries.push(userId);
-
-  updateGiveaway(messageId, {
-    entries: giveaway.entries
-  });
-
-  return {
-    success: true,
-    giveaway
-  };
-}
-
-function removeEntry(messageId, userId) {
-  const giveaway = getGiveaway(messageId);
-
-  if (!giveaway) {
-    return {
-      success: false,
-      reason: "not_found"
-    };
-  }
-
-  if (!Array.isArray(giveaway.entries)) {
-    giveaway.entries = [];
-  }
-
-  const index = giveaway.entries.indexOf(userId);
-
-  if (index === -1) {
-    return {
-      success: false,
-      reason: "not_entered"
-    };
-  }
-
-  giveaway.entries.splice(index, 1);
-
-  updateGiveaway(messageId, {
-    entries: giveaway.entries
-  });
-
-  return {
-    success: true,
-    giveaway
-  };
-}
-
-function pickWinners(entries, amount) {
-  if (!Array.isArray(entries) || entries.length === 0) {
-    return [];
-  }
-
-  const shuffled = [...entries];
-
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-
-    [shuffled[i], shuffled[j]] = [
-      shuffled[j],
-      shuffled[i]
-    ];
-  }
-
-  return shuffled.slice(
-    0,
-    Math.min(amount, shuffled.length)
-  );
-}
-
-function formatTime(timestamp) {
-  if (!timestamp) {
-    return "Unknown";
-  }
-
-  return `<t:${Math.floor(timestamp / 1000)}:R>`;
-}
-
-function buildGiveawayEmbed(giveaway) {
-  const embed = new EmbedBuilder()
-    .setTitle(giveaway.title || "Giveaway")
-    .setDescription(
-      giveaway.description ||
-        "Click the button below to enter the giveaway!"
-    )
-    .setTimestamp();
-
-  if (giveaway.prize) {
-    embed.addFields({
-      name: "Prize",
-      value: String(giveaway.prize),
-      inline: true
-    });
-  }
-
-  if (giveaway.winners) {
-    embed.addFields({
-      name: "Winners",
-      value: String(giveaway.winners),
-      inline: true
-    });
-  }
-
-  if (giveaway.endsAt) {
-    embed.addFields({
-      name: "Ends",
-      value: formatTime(giveaway.endsAt),
-      inline: true
-    });
-  }
-
-  const entries = Array.isArray(giveaway.entries)
-    ? giveaway.entries.length
-    : 0;
-
-  embed.addFields({
-    name: "Entries",
-    value: String(entries),
-    inline: true
-  });
-
-  if (giveaway.hostedBy) {
-    embed.setFooter({
-      text: `Hosted by ${giveaway.hostedBy}`
-    });
-  }
-
-  return embed;
-}
-
-function buildGiveawayButtons(giveaway) {
-  const row = new ActionRowBuilder();
-
-  if (!giveaway.ended) {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`giveaway_join_${giveaway.messageId}`)
-        .setLabel("Enter Giveaway")
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji("🎉"),
-
-      new ButtonBuilder()
-        .setCustomId(`giveaway_leave_${giveaway.messageId}`)
-        .setLabel("Leave Giveaway")
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji("🚪")
-    );
-  }
-
-  return row;
-}
-
-async function updateGiveawayMessage(client, messageId) {
-  const giveaway = getGiveaway(messageId);
-
-  if (!giveaway) {
-    return false;
-  }
-
-  try {
-    const channel = await client.channels.fetch(
-      giveaway.channelId
-    );
-
-    if (!channel || !channel.isTextBased()) {
-      return false;
-    }
-
-    const message = await channel.messages.fetch(
-      giveaway.messageId
-    );
-
-    if (!message) {
-      return false;
-    }
-
-    await message.edit({
-      embeds: [buildGiveawayEmbed(giveaway)],
-      components: giveaway.ended
-        ? []
-        : [buildGiveawayButtons(giveaway)]
-    });
-
-    return true;
-  } catch (error) {
-    console.error(
-      `[GIVEAWAY] Failed to update message ${messageId}:`,
-      error
-    );
-
-    return false;
-  }
-}
-
-async function finishGiveaway(client, messageId) {
-  const giveaway = getGiveaway(messageId);
-
-  if (!giveaway || giveaway.ended) {
-    return null;
-  }
-
-  const winners = pickWinners(
-    giveaway.entries || [],
-    Number(giveaway.winners) || 1
+const config = require('../config.json');
+
+
+/* =========================================================
+   CONFIGURED GIVEAWAY CHANNELS
+========================================================= */
+
+function configuredChannelIds() {
+
+  return (
+    config.giveawayCheckChannelIds ||
+    []
+  ).filter(
+    (id) =>
+      id &&
+      typeof id === 'string' &&
+      !id.startsWith('PUT_')
   );
 
-  updateGiveaway(messageId, {
-    ended: true,
-    winners,
-    endedAt: Date.now()
-  });
+}
 
-  try {
-    const channel = await client.channels.fetch(
-      giveaway.channelId
+
+/* =========================================================
+   GET ALL MESSAGE TEXT
+========================================================= */
+
+function messageText(
+  message
+) {
+
+  const parts = [];
+
+
+  if (
+    message.content
+  ) {
+
+    parts.push(
+      message.content
     );
 
-    if (channel && channel.isTextBased()) {
-      const message = await channel.messages.fetch(
-        giveaway.messageId
+  }
+
+
+  for (
+    const embed of
+    message.embeds || []
+  ) {
+
+    if (
+      embed.title
+    ) {
+
+      parts.push(
+        embed.title
       );
 
-      if (message) {
-        const winnerText =
-          winners.length > 0
-            ? winners.map(id => `<@${id}>`).join(", ")
-            : "No valid winners.";
-
-        const embed = new EmbedBuilder()
-          .setTitle(`🎉 ${giveaway.title || "Giveaway"} — ENDED`)
-          .setDescription(
-            `**Prize:** ${giveaway.prize || "Unknown"}\n\n` +
-            `**Winner(s):** ${winnerText}\n\n` +
-            `**Entries:** ${
-              Array.isArray(giveaway.entries)
-                ? giveaway.entries.length
-                : 0
-            }`
-          )
-          .setTimestamp();
-
-        await message.edit({
-          embeds: [embed],
-          components: []
-        });
-
-        if (winners.length > 0) {
-          await channel.send(
-            `🎉 Congratulations ${winnerText}! You won **${
-              giveaway.title || giveaway.prize || "the giveaway"
-            }**!`
-          );
-        } else {
-          await channel.send(
-            `❌ The giveaway **${
-              giveaway.title || giveaway.prize || "giveaway"
-            }** ended with no valid entries.`
-          );
-        }
-      }
     }
-  } catch (error) {
-    console.error(
-      `[GIVEAWAY] Failed to finish giveaway ${messageId}:`,
-      error
-    );
-  }
 
-  return winners;
-}
 
-async function checkGiveaways(client) {
-  const giveaways = loadGiveaways();
-  const now = Date.now();
-
-  for (const [messageId, giveaway] of Object.entries(
-    giveaways
-  )) {
     if (
-      giveaway &&
-      !giveaway.ended &&
-      giveaway.endsAt &&
-      Number(giveaway.endsAt) <= now
+      embed.description
     ) {
-      await finishGiveaway(client, messageId);
+
+      parts.push(
+        embed.description
+      );
+
     }
+
+
+    for (
+      const field of
+      embed.fields || []
+    ) {
+
+      if (
+        field.name
+      ) {
+
+        parts.push(
+          field.name
+        );
+
+      }
+
+
+      if (
+        field.value
+      ) {
+
+        parts.push(
+          field.value
+        );
+
+      }
+
+    }
+
   }
+
+
+  return parts.join(
+    '\n'
+  );
+
 }
+
+
+/* =========================================================
+   CHECK IF MESSAGE LOOKS LIKE A WINNER MESSAGE
+========================================================= */
+
+function looksLikeWinnerMessage(
+  message,
+  userId
+) {
+
+  /*
+   * GiveawayBot is a bot, so only inspect bot messages.
+   */
+
+  if (
+    !message?.author?.bot
+  ) {
+
+    return false;
+
+  }
+
+
+  const text =
+    messageText(
+      message
+    );
+
+
+  if (!text) {
+
+    return false;
+
+  }
+
+
+  const lower =
+    text.toLowerCase();
+
+
+  /*
+   * The user must actually be mentioned.
+   */
+
+  const mentionsUser =
+    message.mentions?.users?.has(
+      userId
+    ) ||
+
+    text.includes(
+      `<@${userId}>`
+    ) ||
+
+    text.includes(
+      `<@!${userId}>`
+    );
+
+
+  if (!mentionsUser) {
+
+    return false;
+
+  }
+
+
+  /*
+   * Words commonly used in winner announcements.
+   */
+
+  const winnerWords = [
+
+    'congratulations',
+
+    'congrats',
+
+    'winner',
+
+    'winners',
+
+    'you won',
+
+    'won',
+
+    'winner(s)',
+
+  ];
+
+
+  /*
+   * Words that make it much more likely
+   * that this is actually a giveaway result.
+   */
+
+  const giveawayWords = [
+
+    'giveaway',
+
+    'give away',
+
+    'prize',
+
+    'reroll',
+
+    'ended',
+
+  ];
+
+
+  const hasWinnerWord =
+    winnerWords.some(
+      (word) =>
+        lower.includes(
+          word
+        )
+    );
+
+
+  const hasGiveawayWord =
+    giveawayWords.some(
+      (word) =>
+        lower.includes(
+          word
+        )
+    );
+
+
+  return (
+    hasWinnerWord &&
+    hasGiveawayWord
+  );
+
+}
+
+
+/* =========================================================
+   EXTRACT PRIZE
+========================================================= */
+
+function extractPrize(
+  message,
+  userId
+) {
+
+  const texts = [];
+
+
+  if (
+    message.content
+  ) {
+
+    texts.push(
+      message.content
+    );
+
+  }
+
+
+  for (
+    const embed of
+    message.embeds || []
+  ) {
+
+    if (
+      embed.title
+    ) {
+
+      texts.push(
+        embed.title
+      );
+
+    }
+
+
+    if (
+      embed.description
+    ) {
+
+      texts.push(
+        embed.description
+      );
+
+    }
+
+
+    for (
+      const field of
+      embed.fields || []
+    ) {
+
+      if (
+        field.name
+      ) {
+
+        texts.push(
+          field.name
+        );
+
+      }
+
+
+      if (
+        field.value
+      ) {
+
+        texts.push(
+          field.value
+        );
+
+      }
+
+    }
+
+  }
+
+
+  const cleaned =
+    texts
+      .join('\n')
+      .replace(
+        new RegExp(
+          `<@!?${userId}>`,
+          'g'
+        ),
+        ''
+      )
+      .replace(
+        /\s+/g,
+        ' '
+      )
+      .trim();
+
+
+  const patterns = [
+
+    /you won\s+(.+?)(?:!|\.|$)/i,
+
+    /won\s+(.+?)(?:!|\.|$)/i,
+
+    /prize\s*[:\-]\s*(.+?)(?:\n|$)/i,
+
+  ];
+
+
+  for (
+    const pattern of
+    patterns
+  ) {
+
+    const match =
+      cleaned.match(
+        pattern
+      );
+
+
+    if (
+      match?.[1]
+    ) {
+
+      return match[1]
+        .replace(
+          /^[:\-\s]+/,
+          ''
+        )
+        .trim()
+        .slice(
+          0,
+          1024
+        );
+
+    }
+
+  }
+
+
+  /*
+   * Fallback to an embed title if possible.
+   */
+
+  for (
+    const embed of
+    message.embeds || []
+  ) {
+
+    if (
+      embed.title &&
+      !/giveaway|ended|winner/i.test(
+        embed.title
+      )
+    ) {
+
+      return embed.title.slice(
+        0,
+        1024
+      );
+
+    }
+
+  }
+
+
+  return (
+    'Giveaway prize found — ' +
+    'please check the giveaway message.'
+  );
+
+}
+
+
+/* =========================================================
+   FETCH RECENT MESSAGES
+========================================================= */
 
 async function fetchRecentMessages(
   channel,
   maxMessages = 500
 ) {
+
   const messages = [];
 
   let before;
+
 
   while (
     messages.length <
     maxMessages
   ) {
+
     const remaining =
       Math.min(
         100,
@@ -430,115 +440,227 @@ async function fetchRecentMessages(
           messages.length
       );
 
+
     const batch =
       await channel.messages.fetch({
-        limit: remaining,
+
+        limit:
+          remaining,
 
         ...(before
           ? {
               before
             }
-          : {})
+          : {}),
+
       });
 
-    if (!batch.size) {
+
+    if (
+      !batch.size
+    ) {
+
       break;
+
     }
+
 
     messages.push(
       ...batch.values()
     );
 
+
     const oldest =
       batch.last();
 
+
     if (!oldest) {
+
       break;
+
     }
 
-    before = oldest.id;
+
+    before =
+      oldest.id;
+
 
     if (
       batch.size <
       remaining
     ) {
+
       break;
+
     }
+
   }
+
 
   return messages;
+
 }
 
-async function recoverGiveaways(client) {
-  const giveaways = loadGiveaways();
 
-  for (const [messageId, giveaway] of Object.entries(
-    giveaways
-  )) {
-    if (!giveaway || giveaway.ended) {
+/* =========================================================
+   FIND GIVEAWAY WIN
+========================================================= */
+
+async function findGiveawayWin(
+  guild,
+  userId
+) {
+
+  const channelIds =
+    configuredChannelIds();
+
+
+  if (
+    !channelIds.length
+  ) {
+
+    return {
+
+      configured:
+        false,
+
+      found:
+        false,
+
+      results:
+        [],
+
+    };
+
+  }
+
+
+  const results = [];
+
+
+  for (
+    const channelId of
+    channelIds
+  ) {
+
+    const channel =
+      await guild.channels
+        .fetch(
+          channelId
+        )
+        .catch(
+          () => null
+        );
+
+
+    if (
+      !channel ||
+      !channel.isTextBased()
+    ) {
+
       continue;
+
     }
+
+
+    let messages;
+
 
     try {
-      await updateGiveawayMessage(
-        client,
-        messageId
-      );
+
+      messages =
+        await fetchRecentMessages(
+          channel,
+          500
+        );
+
     } catch (error) {
+
       console.error(
-        `[GIVEAWAY] Failed to recover ${messageId}:`,
+        `[GIVEAWAY CHECK] Failed to read #${channel.name}:`,
         error
       );
+
+      continue;
+
     }
+
+
+    for (
+      const message of
+      messages
+    ) {
+
+      if (
+        !looksLikeWinnerMessage(
+          message,
+          userId
+        )
+      ) {
+
+        continue;
+
+      }
+
+
+      results.push({
+
+        channelId:
+          channel.id,
+
+        channelName:
+          channel.name,
+
+        messageId:
+          message.id,
+
+        messageUrl:
+          message.url,
+
+        prize:
+          extractPrize(
+            message,
+            userId
+          ),
+
+        createdTimestamp:
+          message.createdTimestamp,
+
+      });
+
+    }
+
   }
-}
 
-function startGiveawayChecker(client) {
-  checkGiveaways(client).catch(error => {
-    console.error(
-      "[GIVEAWAY] Initial giveaway check failed:",
-      error
-    );
-  });
 
-  setInterval(() => {
-    checkGiveaways(client).catch(error => {
-      console.error(
-        "[GIVEAWAY] Giveaway check failed:",
-        error
-      );
-    });
-  }, 15000);
+  /*
+   * Newest wins first.
+   */
 
-  recoverGiveaways(client).catch(error => {
-    console.error(
-      "[GIVEAWAY] Giveaway recovery failed:",
-      error
-    );
-  });
-
-  console.log(
-    "[GIVEAWAY] Giveaway checker started."
+  results.sort(
+    (a, b) =>
+      b.createdTimestamp -
+      a.createdTimestamp
   );
+
+
+  return {
+
+    configured:
+      true,
+
+    found:
+      results.length > 0,
+
+    results,
+
+  };
+
 }
+
 
 module.exports = {
-  loadGiveaways,
-  saveGiveaways,
-  getGiveaways,
-  getGiveaway,
-  createGiveaway,
-  updateGiveaway,
-  deleteGiveaway,
-  addEntry,
-  removeEntry,
-  pickWinners,
-  buildGiveawayEmbed,
-  buildGiveawayButtons,
-  updateGiveawayMessage,
-  finishGiveaway,
-  checkGiveaways,
-  fetchRecentMessages,
-  recoverGiveaways,
-  startGiveawayChecker
+
+  findGiveawayWin,
+
 };
