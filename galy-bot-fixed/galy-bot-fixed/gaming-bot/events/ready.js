@@ -9,7 +9,15 @@ module.exports = {
   execute(client) {
     console.log(`✅ Logged in as ${client.user.tag}`);
     startTikTokPolling(client);
-    rearmActiveGiveaways(client);
+
+    if (typeof rearmActiveGiveaways === 'function') {
+      rearmActiveGiveaways(client);
+    } else {
+      console.error(
+        '[READY] rearmActiveGiveaways is not a function — check utils/giveawayManager.js exports. Skipping giveaway rearm so the bot can still start.'
+      );
+    }
+
     startDailyGiveawayLoop(client);
     startDailyQuoteLoop(client);
 
