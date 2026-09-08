@@ -96,18 +96,18 @@ function formatTimeLeft(ms) {
 
 function buildGiveawayEmbed(giveaway) {
   const ended = !!giveaway.ended;
-  const entrantCount = (giveaway.entrants || []).length;
+  const hostedByLine = giveaway.hostId ? `**Hosted by:** <@${giveaway.hostId}>\n` : '';
 
   const embed = new EmbedBuilder()
     .setTitle(`🎉 ${giveaway.prize}`)
-    .setColor(ended ? '#2F3136' : '#F47FFF')
+    .setColor(ended ? '#2F3136' : '#89CFF0')
     .setTimestamp(giveaway.endTimestamp);
 
   if (ended) {
     embed.setDescription(
       giveaway.winners && giveaway.winners.length > 0
-        ? `**Winner(s):** ${giveaway.winners.map((id) => `<@${id}>`).join(', ')}\n\nEntrants: ${entrantCount}`
-        : 'No valid entrants — no winner could be chosen.'
+        ? `**Winner(s):** ${giveaway.winners.map((id) => `<@${id}>`).join(', ')}\n\n${hostedByLine}`
+        : `No valid entrants — no winner could be chosen.\n\n${hostedByLine}`
     );
     embed.setFooter({ text: 'Giveaway ended' });
   } else {
@@ -116,8 +116,8 @@ function buildGiveawayEmbed(giveaway) {
     embed.setDescription(
       'Click below to enter!\n\n' +
       `**Winners:** ${giveaway.winnerCount}\n` +
-      `**Ends:** \`${timeLeft}\`\n` +
-      `**Entries:** ${entrantCount}\n\n` +
+      hostedByLine +
+      `**Ends:** \`${timeLeft}\`\n\n` +
       `<t:${Math.floor(giveaway.endTimestamp / 1000)}:F>`
     );
     embed.setFooter({ text: 'Good luck!' });
@@ -131,7 +131,7 @@ function buildJoinRow(entrantCount = 0, disabled = false) {
     new ButtonBuilder()
       .setCustomId('giveaway_join')
       .setLabel(`🎉 Join Giveaway (${entrantCount})`)
-      .setStyle(ButtonStyle.Success)
+      .setStyle(ButtonStyle.Primary)
       .setDisabled(disabled)
   );
 }
