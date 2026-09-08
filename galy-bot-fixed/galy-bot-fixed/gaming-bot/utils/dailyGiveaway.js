@@ -84,7 +84,18 @@ async function postDailyGiveaway(client) {
   const prize = settings.prize || '3m Donut SMP';
   const winnerCount = settings.winnerCount || 1;
   const endTimestamp = Date.now() + DAY_MS;
-  const embed = buildGiveawayEmbed(prize, endTimestamp, winnerCount, 0);
+
+  const giveaway = {
+    prize,
+    winnerCount,
+    endTimestamp,
+    channelId: channel.id,
+    entrants: [],
+    ended: false,
+    isDaily: true,
+  };
+
+  const embed = buildGiveawayEmbed(giveaway);
 
   const messageAbove = settings.messageAbove || '@everyone';
 
@@ -92,7 +103,7 @@ async function postDailyGiveaway(client) {
     .send({
       content: messageAbove,
       embeds: [embed],
-      components: [buildJoinRow()],
+      components: [buildJoinRow(0)],
     })
     .catch(() => null);
 
@@ -103,15 +114,7 @@ async function postDailyGiveaway(client) {
   }
 
   const giveaways = loadGiveaways();
-  giveaways[message.id] = {
-    prize,
-    winnerCount,
-    endTimestamp,
-    channelId: channel.id,
-    entrants: [],
-    ended: false,
-    isDaily: true,
-  };
+  giveaways[message.id] = giveaway;
   saveGiveaways(giveaways);
 
   // This giveaway's own endTimestamp (stored above, and shown in the embed's
