@@ -1335,6 +1335,72 @@ module.exports = {
 
 
         /* =================================================
+           GIVEAWAY CLAIM
+        ================================================= */
+
+        if (
+          interaction.customId.startsWith(
+            'giveaway_prize_claim_'
+          )
+        ) {
+
+          const messageId =
+            interaction.customId.replace(
+              'giveaway_prize_claim_',
+              ''
+            );
+
+          const giveaways =
+            loadGiveaways();
+
+          const giveaway =
+            giveaways[messageId];
+
+          if (!giveaway) {
+            return interaction.reply({
+              content:
+                'This giveaway could not be found.',
+              ephemeral: true,
+            });
+          }
+
+          const winners =
+            Array.isArray(giveaway.winners)
+              ? giveaway.winners
+              : [];
+
+          if (
+            !winners.includes(
+              interaction.user.id
+            )
+          ) {
+            return interaction.reply({
+              content:
+                '❌ Only the winner of this giveaway can claim this prize.',
+              ephemeral: true,
+            });
+          }
+
+          const answers = [
+            `**How much did you win?**\n${giveaway.prize}`,
+            `**Who was the giveaway hosted by?**\n${
+              giveaway.hostId
+                ? `<@${giveaway.hostId}>`
+                : 'Unknown'
+            }`,
+          ];
+
+          await createTicket(
+            interaction,
+            'giveaway_claim',
+            answers
+          );
+
+          return;
+        }
+
+
+        /* =================================================
            REACTION ROLES
         ================================================= */
 
