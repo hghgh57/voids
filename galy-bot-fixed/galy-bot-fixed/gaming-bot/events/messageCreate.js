@@ -27,6 +27,13 @@ const {
   isLocked,
 } = require('../utils/lockManager');
 
+const {
+  getRandomRoast,
+  isOnCooldown,
+  getRemainingSeconds,
+  startCooldown,
+} = require('../utils/roastManager');
+
 const config = require('../config.json');
 
 /* =========================================================
@@ -211,6 +218,34 @@ async function handleAfkCommand(message, args) {
 }
 
 /* ---------------------------------------------------------
+   !roast @user
+--------------------------------------------------------- */
+
+async function handleRoastCommand(message) {
+  const target = message.mentions.users.first();
+
+  if (!target) {
+    return message.reply('You need to mention someone to roast! Example: `!roast @user`');
+  }
+
+  if (target.id === message.author.id) {
+    return message.reply('You can\'t roast yourself, nice try.');
+  }
+
+  if (isOnCooldown(message.author.id)) {
+    const seconds = getRemainingSeconds(message.author.id);
+    const cooldownMsg = await message.reply(`Slow down — you can use \`!roast\` again in ${seconds}s.`);
+    setTimeout(() => cooldownMsg.delete().catch(() => {}), 5000);
+    return;
+  }
+
+  startCooldown(message.author.id);
+
+  const roast = getRandomRoast();
+  await message.channel.send(`${target} ${roast}`);
+}
+
+/* ---------------------------------------------------------
    Dispatcher for prefix commands. Returns true if a command
    was matched & handled (caller should stop processing).
 --------------------------------------------------------- */
@@ -234,6 +269,9 @@ async function handlePrefixCommands(message) {
       return true;
     case 'afk':
       await handleAfkCommand(message, args);
+      return true;
+    case 'roast':
+      await handleRoastCommand(message);
       return true;
     default:
       return false;
