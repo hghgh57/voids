@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, PermissionsBitField } = require('discord.js');
 
 const {
   getSticky,
@@ -19,6 +19,13 @@ const {
   getAfk,
   isAfk,
 } = require('../utils/afkManager');
+
+const {
+  saveLockState,
+  getLockState,
+  clearLockState,
+  isLocked,
+} = require('../utils/lockManager');
 
 const config = require('../config.json');
 
@@ -95,6 +102,17 @@ async function handlePurgeCommand(message, args) {
    !lock / !unlock
 --------------------------------------------------------- */
 
+// Reads a role's current SendMessages overwrite on a channel.
+// Returns true (explicit allow), false (explicit deny), or null (no overwrite / inherits).
+function getCurrentSendMessagesState(channel, roleId) {
+  const overwrite = channel.permissionOverwrites.cache.get(roleId);
+  if (!overwrite) return null;
+
+  if (overwrite.allow.has(PermissionsBitField.Flags.SendMessages)) return true;
+  if (overwrite.deny.has(PermissionsBitField.Flags.SendMessages)) return false;
+  return null;
+}
+
 async function handleLockCommand(message) {
   if (!hasModCommandRole(message.member)) {
     const denied = await message.reply('You do not have permission to use this command.');
@@ -102,15 +120,36 @@ async function handleLockCommand(message) {
     return;
   }
 
-  const everyoneRole = message.guild.roles.everyone;
-  await message.channel.permissionOverwrites.edit(everyoneRole, { SendMessages: false });
-  await message.channel.send('🔒 This channel has been locked.');
+  const channel = message.channel;
+
+  if (isLocked(channel.id)) {
+    return message.reply('This channel is already locked.');
+  }
+
+  // Snapshot every role's current SendMessages state, then explicitly deny
+  // SendMessages for every single role so nobody can slip through via a
+  // role-specific "allow" overwrite.
+  const previousState = new Map();
+
+  for (const role of message.guild.roles.cache.values()) {
+    previousState.set(role.id, getCurrentSendMessagesState(channel, role.id));
+
+    await channel.permissionOverwrites
+      .edit(role, { SendMessages: false })
+      .catch((err) => {
+        console.error(`[LOCK] Failed to deny SendMessages for role ${role.id}:`, err);
+      });
+  }
+
+  saveLockState(channel.id, previousState);
+
+  await channel.send('🔒 This channel has been locked. No roles can send messages here.');
 
   await logModAction(message.guild, {
     action: 'Channel Locked',
     moderator: message.author,
     target: message.author,
-    reason: `#${message.channel.name}`,
+    reason: `#${channel.name}`,
   }).catch(() => {});
 }
 
@@ -121,15 +160,43 @@ async function handleUnlockCommand(message) {
     return;
   }
 
-  const everyoneRole = message.guild.roles.everyone;
-  await message.channel.permissionOverwrites.edit(everyoneRole, { SendMessages: null });
-  await message.channel.send('🔓 This channel has been unlocked.');
+  const channel = message.channel;
+  const previousState = getLockState(channel.id);
+
+  if (!previousState) {
+    return message.reply('This channel is not locked.');
+  }
+
+  for (const [roleId, previousValue] of previousState) {
+    const role = message.guild.roles.cache.get(roleId);
+    if (!role) continue;
+
+    if (previousValue === null) {
+      // Role had no explicit SendMessages overwrite before locking.
+      const overwrite = channel.permissionOverwrites.cache.get(roleId);
+      const onlyHadSendMessages =
+        overwrite && overwrite.allow.bitfield === 0n && overwrite.deny.bitfield === PermissionsBitField.Flags.SendMessages;
+
+      if (onlyHadSendMessages) {
+        // We created this overwrite purely to lock — remove it entirely.
+        await channel.permissionOverwrites.delete(role).catch(() => {});
+      } else {
+        await channel.permissionOverwrites.edit(role, { SendMessages: null }).catch(() => {});
+      }
+    } else {
+      await channel.permissionOverwrites.edit(role, { SendMessages: previousValue }).catch(() => {});
+    }
+  }
+
+  clearLockState(channel.id);
+
+  await channel.send('🔓 This channel has been unlocked. Everyone can send messages again.');
 
   await logModAction(message.guild, {
     action: 'Channel Unlocked',
     moderator: message.author,
     target: message.author,
-    reason: `#${message.channel.name}`,
+    reason: `#${channel.name}`,
   }).catch(() => {});
 }
 
