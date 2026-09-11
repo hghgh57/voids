@@ -52,7 +52,9 @@ const PREFIX = '!';
 const MOD_COMMAND_ROLE_ID = '1547855037345177660';
 
 function hasModCommandRole(member) {
-  return !!member?.roles.cache.has(MOD_COMMAND_ROLE_ID);
+  if (!member) return false;
+  if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return true;
+  return member.roles.cache.has(MOD_COMMAND_ROLE_ID);
 }
 
 /* ---------------------------------------------------------
@@ -134,11 +136,12 @@ async function handleLockCommand(message) {
   }
 
   // Only touch roles that are actually relevant to THIS channel: @everyone
-  // (which controls the default access) plus any role that already has an
-  // overwrite here. Looping over every role in the whole guild was what made
-  // this take minutes on servers with lots of roles.
+  // (which controls the default access), the mod-command role (so we can
+  // give it a bypass), and any role that already has an overwrite here.
+  // Looping over every role in the whole guild was what made this take
+  // minutes on servers with lots of roles.
   const everyoneRole = message.guild.roles.everyone;
-  const relevantRoleIds = new Set([everyoneRole.id]);
+  const relevantRoleIds = new Set([everyoneRole.id, MOD_COMMAND_ROLE_ID]);
 
   for (const overwrite of channel.permissionOverwrites.cache.values()) {
     if (overwrite.type === 0) relevantRoleIds.add(overwrite.id); // type 0 = role overwrite
@@ -153,16 +156,21 @@ async function handleLockCommand(message) {
   }
   saveLockState(channel.id, previousState);
 
-  // Run all the edits in parallel instead of one at a time.
+  // Run all the edits in parallel instead of one at a time. The mod-command
+  // role gets an explicit ALLOW instead of a deny, so it bypasses the lock —
+  // an explicit allow on one of a member's roles beats a deny from another
+  // (e.g. @everyone), so they can keep typing.
   await Promise.all(
     Array.from(relevantRoleIds).map((roleId) => {
       const role = message.guild.roles.cache.get(roleId);
       if (!role) return Promise.resolve();
 
+      const sendMessages = roleId === MOD_COMMAND_ROLE_ID ? true : false;
+
       return channel.permissionOverwrites
-        .edit(role, { SendMessages: false })
+        .edit(role, { SendMessages: sendMessages })
         .catch((err) => {
-          console.error(`[LOCK] Failed to deny SendMessages for role ${role.id}:`, err);
+          console.error(`[LOCK] Failed to set SendMessages for role ${role.id}:`, err);
         });
     })
   );
