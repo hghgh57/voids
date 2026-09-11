@@ -133,22 +133,39 @@ async function handleLockCommand(message) {
     return message.reply('This channel is already locked.');
   }
 
-  // Snapshot every role's current SendMessages state, then explicitly deny
-  // SendMessages for every single role so nobody can slip through via a
-  // role-specific "allow" overwrite.
-  const previousState = new Map();
+  // Only touch roles that are actually relevant to THIS channel: @everyone
+  // (which controls the default access) plus any role that already has an
+  // overwrite here. Looping over every role in the whole guild was what made
+  // this take minutes on servers with lots of roles.
+  const everyoneRole = message.guild.roles.everyone;
+  const relevantRoleIds = new Set([everyoneRole.id]);
 
-  for (const role of message.guild.roles.cache.values()) {
-    previousState.set(role.id, getCurrentSendMessagesState(channel, role.id));
-
-    await channel.permissionOverwrites
-      .edit(role, { SendMessages: false })
-      .catch((err) => {
-        console.error(`[LOCK] Failed to deny SendMessages for role ${role.id}:`, err);
-      });
+  for (const overwrite of channel.permissionOverwrites.cache.values()) {
+    if (overwrite.type === 0) relevantRoleIds.add(overwrite.id); // type 0 = role overwrite
   }
 
+  // Snapshot current state for those roles and save it BEFORE doing any
+  // edits. This is what makes !unlock immediately aware the channel is
+  // locked, instead of only after every edit below finishes.
+  const previousState = new Map();
+  for (const roleId of relevantRoleIds) {
+    previousState.set(roleId, getCurrentSendMessagesState(channel, roleId));
+  }
   saveLockState(channel.id, previousState);
+
+  // Run all the edits in parallel instead of one at a time.
+  await Promise.all(
+    Array.from(relevantRoleIds).map((roleId) => {
+      const role = message.guild.roles.cache.get(roleId);
+      if (!role) return Promise.resolve();
+
+      return channel.permissionOverwrites
+        .edit(role, { SendMessages: false })
+        .catch((err) => {
+          console.error(`[LOCK] Failed to deny SendMessages for role ${role.id}:`, err);
+        });
+    })
+  );
 
   await channel.send('🔒 This channel has been locked. No roles can send messages here.');
 
@@ -174,28 +191,32 @@ async function handleUnlockCommand(message) {
     return message.reply('This channel is not locked.');
   }
 
-  for (const [roleId, previousValue] of previousState) {
-    const role = message.guild.roles.cache.get(roleId);
-    if (!role) continue;
-
-    if (previousValue === null) {
-      // Role had no explicit SendMessages overwrite before locking.
-      const overwrite = channel.permissionOverwrites.cache.get(roleId);
-      const onlyHadSendMessages =
-        overwrite && overwrite.allow.bitfield === 0n && overwrite.deny.bitfield === PermissionsBitField.Flags.SendMessages;
-
-      if (onlyHadSendMessages) {
-        // We created this overwrite purely to lock — remove it entirely.
-        await channel.permissionOverwrites.delete(role).catch(() => {});
-      } else {
-        await channel.permissionOverwrites.edit(role, { SendMessages: null }).catch(() => {});
-      }
-    } else {
-      await channel.permissionOverwrites.edit(role, { SendMessages: previousValue }).catch(() => {});
-    }
-  }
-
+  // Clear the lock state up front so a second !unlock fired while this one
+  // is still running doesn't also try to restore the same roles.
   clearLockState(channel.id);
+
+  await Promise.all(
+    Array.from(previousState.entries()).map(async ([roleId, previousValue]) => {
+      const role = message.guild.roles.cache.get(roleId);
+      if (!role) return;
+
+      if (previousValue === null) {
+        // Role had no explicit SendMessages overwrite before locking.
+        const overwrite = channel.permissionOverwrites.cache.get(roleId);
+        const onlyHadSendMessages =
+          overwrite && overwrite.allow.bitfield === 0n && overwrite.deny.bitfield === PermissionsBitField.Flags.SendMessages;
+
+        if (onlyHadSendMessages) {
+          // We created this overwrite purely to lock — remove it entirely.
+          await channel.permissionOverwrites.delete(role).catch(() => {});
+        } else {
+          await channel.permissionOverwrites.edit(role, { SendMessages: null }).catch(() => {});
+        }
+      } else {
+        await channel.permissionOverwrites.edit(role, { SendMessages: previousValue }).catch(() => {});
+      }
+    })
+  );
 
   await channel.send('🔓 This channel has been unlocked. Everyone can send messages again.');
 
