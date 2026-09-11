@@ -2,6 +2,7 @@ const { startTikTokPolling } = require('../utils/tiktokLive');
 const { rearmActiveGiveaways } = require('../utils/giveawayManager');
 const { startDailyGiveawayLoop } = require('../utils/dailyGiveaway');
 const { startDailyQuoteLoop } = require('../utils/dailyQuote');
+const { rearmTempBans } = require('../utils/tempBanManager');
 
 module.exports = {
   name: 'ready',
@@ -17,6 +18,10 @@ module.exports = {
         '[READY] rearmActiveGiveaways is not a function — check utils/giveawayManager.js exports. Skipping giveaway rearm so the bot can still start.'
       );
     }
+
+    // Re-schedule any temp-ban auto-unbans that were still pending when the
+    // bot last shut down (in-memory timers don't survive a restart).
+    rearmTempBans(client);
 
     startDailyGiveawayLoop(client);
     startDailyQuoteLoop(client);
