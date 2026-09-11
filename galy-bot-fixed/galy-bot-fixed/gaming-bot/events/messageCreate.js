@@ -78,6 +78,13 @@ function hasRoleOrAdmin(member, roleId) {
   return member.roles.cache.has(roleId);
 }
 
+// Members with this role can't be timed out, kicked, or banned via !t/!k/!b.
+const PROTECTED_ROLE_ID = '1547869336486551643';
+
+function isProtected(member) {
+  return !!member?.roles.cache.has(PROTECTED_ROLE_ID);
+}
+
 /* ---------------------------------------------------------
    !purge <amount>
 --------------------------------------------------------- */
@@ -286,6 +293,10 @@ async function handleTimeoutCommand(message, args) {
     return message.reply('You need to mention someone to timeout! Example: `!t 20s @user reason`');
   }
 
+  if (isProtected(target)) {
+    return message.reply("That member can't be timed out.");
+  }
+
   if (!target.moderatable) {
     return message.reply("I can't timeout that member — they may have a higher role than me or I'm missing permissions.");
   }
@@ -337,6 +348,10 @@ async function handleKickCommand(message, args) {
     return message.reply('You need to mention someone to kick! Example: `!k @user reason`');
   }
 
+  if (isProtected(target)) {
+    return message.reply("That member can't be kicked.");
+  }
+
   if (!target.kickable) {
     return message.reply("I can't kick that member — they may have a higher role than me or I'm missing permissions.");
   }
@@ -382,6 +397,10 @@ async function handleBanCommand(message, args) {
   const target = message.mentions.members?.first();
   if (!target) {
     return message.reply('You need to mention someone to ban! Example: `!b @user reason` or `!b 3d @user reason`.');
+  }
+
+  if (isProtected(target)) {
+    return message.reply("That member can't be banned.");
   }
 
   if (!target.bannable) {
