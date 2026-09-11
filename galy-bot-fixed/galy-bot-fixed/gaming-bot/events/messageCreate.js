@@ -34,6 +34,12 @@ const {
   startCooldown,
 } = require('../utils/roastManager');
 
+const {
+  parseDuration,
+  addTempBan,
+  scheduleUnban,
+} = require('../utils/tempBanManager');
+
 const config = require('../config.json');
 
 /* =========================================================
@@ -55,6 +61,21 @@ function hasModCommandRole(member) {
   if (!member) return false;
   if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return true;
   return member.roles.cache.has(MOD_COMMAND_ROLE_ID);
+}
+
+// Roles for !t / !k / !b — admin perms can use all three regardless of role.
+const TIMEOUT_ROLE_ID = '1526936584253997146';
+const KICK_ROLE_ID = '1492833649123393676';
+const BAN_ROLE_ID = '1547855037345177660'; // same role as !purge/!lock/!unlock
+
+const MAX_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000; // 1 week — applies to !t and to !b's optional duration
+
+const MENTION_REGEX = /^<@!?\d+>$/;
+
+function hasRoleOrAdmin(member, roleId) {
+  if (!member) return false;
+  if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return true;
+  return member.roles.cache.has(roleId);
 }
 
 /* ---------------------------------------------------------
@@ -237,6 +258,187 @@ async function handleUnlockCommand(message) {
 }
 
 /* ---------------------------------------------------------
+   !t <duration> @user [reason]   — timeout, max 1 week
+--------------------------------------------------------- */
+
+async function handleTimeoutCommand(message, args) {
+  if (!hasRoleOrAdmin(message.member, TIMEOUT_ROLE_ID)) {
+    const denied = await message.reply('You do not have permission to use this command.');
+    setTimeout(() => denied.delete().catch(() => {}), 5000);
+    return;
+  }
+
+  const durationArg = args[0];
+  const durationMs = parseDuration(durationArg);
+
+  if (!durationMs) {
+    return message.reply(
+      'Please provide a valid duration. Example: `!t 20s @user reason`, `!t 10m @user reason`, `!t 3d @user reason` (s/m/h/d/w, max 1 week).'
+    );
+  }
+
+  if (durationMs > MAX_TIMEOUT_MS) {
+    return message.reply('Timeout duration cannot be longer than 1 week.');
+  }
+
+  const target = message.mentions.members?.first();
+  if (!target) {
+    return message.reply('You need to mention someone to timeout! Example: `!t 20s @user reason`');
+  }
+
+  if (!target.moderatable) {
+    return message.reply("I can't timeout that member — they may have a higher role than me or I'm missing permissions.");
+  }
+
+  const reason =
+    args
+      .slice(1)
+      .filter((arg) => !MENTION_REGEX.test(arg))
+      .join(' ')
+      .trim() || 'No reason provided';
+
+  try {
+    await target.timeout(durationMs, reason);
+  } catch (err) {
+    console.error('[TIMEOUT] Failed to timeout member:', err);
+    return message.reply("Couldn't timeout that member — I may be missing permissions or their role is higher than mine.");
+  }
+
+  await target
+    .send(
+      `You have been timed out in **${message.guild.name}** for **${durationArg}** by ${message.author.tag}.\nReason: ${reason}`
+    )
+    .catch(() => {});
+
+  await message.channel.send(`⏱️ ${target.user.tag} has been timed out for ${durationArg}. Reason: ${reason}`);
+
+  await logModAction(message.guild, {
+    action: 'Timeout',
+    moderator: message.author,
+    target: target.user,
+    reason,
+    extra: [{ name: 'Duration', value: durationArg, inline: true }],
+  }).catch(() => {});
+}
+
+/* ---------------------------------------------------------
+   !k @user [reason]   — kick
+--------------------------------------------------------- */
+
+async function handleKickCommand(message, args) {
+  if (!hasRoleOrAdmin(message.member, KICK_ROLE_ID)) {
+    const denied = await message.reply('You do not have permission to use this command.');
+    setTimeout(() => denied.delete().catch(() => {}), 5000);
+    return;
+  }
+
+  const target = message.mentions.members?.first();
+  if (!target) {
+    return message.reply('You need to mention someone to kick! Example: `!k @user reason`');
+  }
+
+  if (!target.kickable) {
+    return message.reply("I can't kick that member — they may have a higher role than me or I'm missing permissions.");
+  }
+
+  const reason = args.filter((arg) => !MENTION_REGEX.test(arg)).join(' ').trim() || 'No reason provided';
+
+  // DM before removing them — sending it first avoids any edge case where
+  // losing the shared guild makes a fresh DM channel harder to open.
+  await target
+    .send(`You have been kicked from **${message.guild.name}** by ${message.author.tag}.\nReason: ${reason}`)
+    .catch(() => {});
+
+  try {
+    await target.kick(reason);
+  } catch (err) {
+    console.error('[KICK] Failed to kick member:', err);
+    return message.reply("Couldn't kick that member — I may be missing permissions or their role is higher than mine.");
+  }
+
+  await message.channel.send(`👢 ${target.user.tag} has been kicked. Reason: ${reason}`);
+
+  await logModAction(message.guild, {
+    action: 'Kick',
+    moderator: message.author,
+    target: target.user,
+    reason,
+  }).catch(() => {});
+}
+
+/* ---------------------------------------------------------
+   !b [duration] @user [reason]   — ban
+   With a duration: temp ban, auto-unbanned after it expires (max 1 week).
+   Without one: permanent ban.
+--------------------------------------------------------- */
+
+async function handleBanCommand(message, args) {
+  if (!hasRoleOrAdmin(message.member, BAN_ROLE_ID)) {
+    const denied = await message.reply('You do not have permission to use this command.');
+    setTimeout(() => denied.delete().catch(() => {}), 5000);
+    return;
+  }
+
+  const target = message.mentions.members?.first();
+  if (!target) {
+    return message.reply('You need to mention someone to ban! Example: `!b @user reason` or `!b 3d @user reason`.');
+  }
+
+  if (!target.bannable) {
+    return message.reply("I can't ban that member — they may have a higher role than me or I'm missing permissions.");
+  }
+
+  // If the first arg parses as a duration, this is a temp ban and everything
+  // after it is the reason. Otherwise it's a permanent ban and every
+  // non-mention arg is the reason.
+  const maybeDurationArg = args[0];
+  const durationMs = maybeDurationArg ? parseDuration(maybeDurationArg) : null;
+
+  if (durationMs && durationMs > MAX_TIMEOUT_MS) {
+    return message.reply('Ban duration cannot be longer than 1 week.');
+  }
+
+  const reasonArgs = durationMs ? args.slice(1) : args;
+  const reason = reasonArgs.filter((arg) => !MENTION_REGEX.test(arg)).join(' ').trim() || 'No reason provided';
+  const durationLabel = durationMs ? maybeDurationArg : null;
+
+  await target
+    .send(
+      durationLabel
+        ? `You have been banned from **${message.guild.name}** for **${durationLabel}** by ${message.author.tag}.\nReason: ${reason}`
+        : `You have been banned from **${message.guild.name}** by ${message.author.tag}.\nReason: ${reason}`
+    )
+    .catch(() => {});
+
+  try {
+    await target.ban({ reason });
+  } catch (err) {
+    console.error('[BAN] Failed to ban member:', err);
+    return message.reply("Couldn't ban that member — I may be missing permissions or their role is higher than mine.");
+  }
+
+  if (durationMs) {
+    const unbanAt = Date.now() + durationMs;
+    addTempBan(message.guild.id, target.id, unbanAt);
+    scheduleUnban(message.client, message.guild.id, target.id, unbanAt);
+  }
+
+  await message.channel.send(
+    durationLabel
+      ? `🔨 ${target.user.tag} has been banned for ${durationLabel}. Reason: ${reason}`
+      : `🔨 ${target.user.tag} has been banned. Reason: ${reason}`
+  );
+
+  await logModAction(message.guild, {
+    action: durationMs ? 'Temp Ban' : 'Ban',
+    moderator: message.author,
+    target: target.user,
+    reason,
+    extra: durationMs ? [{ name: 'Duration', value: durationLabel, inline: true }] : [],
+  }).catch(() => {});
+}
+
+/* ---------------------------------------------------------
    !afk [reason]
 --------------------------------------------------------- */
 
@@ -295,6 +497,15 @@ async function handlePrefixCommands(message) {
       return true;
     case 'unlock':
       await handleUnlockCommand(message);
+      return true;
+    case 't':
+      await handleTimeoutCommand(message, args);
+      return true;
+    case 'k':
+      await handleKickCommand(message, args);
+      return true;
+    case 'b':
+      await handleBanCommand(message, args);
       return true;
     case 'afk':
       await handleAfkCommand(message, args);
