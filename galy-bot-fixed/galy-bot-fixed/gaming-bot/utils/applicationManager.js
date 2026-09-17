@@ -54,6 +54,25 @@ function clearApplied(userId, appId) {
   saveApplied(data);
 }
 
+/*
+  Store extra info about where an application's messages live
+  (the ticket channel/message and the log channel/message) so
+  the accept/deny handler can update BOTH copies later, even
+  though it only receives the interaction from one of them.
+*/
+function updateApplicationRefs(userId, appId, refs) {
+  const data = loadApplied();
+  const key = applicationKey(userId, appId);
+  const existing = data[key] || { status: 'pending', createdAt: Date.now() };
+  data[key] = { ...existing, ...refs };
+  saveApplied(data);
+}
+
+function getApplicationRefs(userId, appId) {
+  const data = loadApplied();
+  return data[applicationKey(userId, appId)] || null;
+}
+
 /* =========================================================
    FIND APPLICATION CONFIG
 ========================================================= */
@@ -67,11 +86,31 @@ function getApplication(appId) {
 ========================================================= */
 
 function buildApplicationEmbed(member, appConfig, answers) {
+  const createdTimestamp = Math.floor(member.user.createdTimestamp / 1000);
+  const joinedTimestamp = member.joinedTimestamp
+    ? Math.floor(member.joinedTimestamp / 1000)
+    : null;
+
   const embed = new EmbedBuilder()
     .setTitle(`📋 New Application: ${appConfig.label}`)
     .setColor(appConfig.color || '#5865F2')
     .setThumbnail(member.user.displayAvatarURL())
-    .addFields({ name: 'Applicant', value: `${member} (${member.user.tag})`, inline: false })
+    .addFields(
+      { name: 'Applicant', value: `${member} (${member.user.tag})`, inline: false },
+      { name: 'User ID', value: `\`${member.id}\``, inline: true },
+      {
+        name: 'Account Created',
+        value: `<t:${createdTimestamp}:F>\n(<t:${createdTimestamp}:R>)`,
+        inline: true,
+      },
+      {
+        name: 'Joined Server',
+        value: joinedTimestamp
+          ? `<t:${joinedTimestamp}:F>\n(<t:${joinedTimestamp}:R>)`
+          : 'Unknown',
+        inline: true,
+      }
+    )
     .setFooter({ text: `User ID: ${member.id}` })
     .setTimestamp();
 
@@ -114,6 +153,8 @@ module.exports = {
   hasApplied,
   markApplied,
   clearApplied,
+  updateApplicationRefs,
+  getApplicationRefs,
   getApplication,
   buildApplicationEmbed,
   buildDecisionRow,
