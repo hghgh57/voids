@@ -149,6 +149,24 @@ function buildDecisionRow(userId, appId, disabled = false) {
   );
 }
 
+/* =========================================================
+   OPEN TICKET BUTTON (sent to the applicant's DM when denied)
+========================================================= */
+
+function buildOpenTicketRow(userId, appId, disabled = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      // NOTE: must NOT start with "app_accept_" or "app_deny_" —
+      // those prefixes are matched with .startsWith() elsewhere
+      // and would swallow this button's clicks.
+      .setCustomId(`app_open_ticket_${userId}_${appId}`)
+      .setLabel('Open Ticket')
+      .setEmoji('🎫')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(disabled)
+  );
+}
+
 module.exports = {
   hasApplied,
   markApplied,
@@ -158,4 +176,5 @@ module.exports = {
   getApplication,
   buildApplicationEmbed,
   buildDecisionRow,
+  buildOpenTicketRow,
 };
