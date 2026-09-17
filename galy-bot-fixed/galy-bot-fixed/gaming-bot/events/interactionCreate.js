@@ -33,6 +33,7 @@ const {
   buildDecisionRow,
   getApplication,
   getApplicationRefs,
+  buildOpenTicketRow,
 } = require('../utils/applicationManager');
 
 const {
@@ -188,7 +189,17 @@ async function finalizeApplicationDecision({
         ? `Your **${label}** application in **${interaction.guild.name}** was denied.\n**Reason:** ${reason}`
         : `Your **${label}** application in **${interaction.guild.name}** was denied.`;
 
-    await applicant.send(dmContent).catch((err) => {
+    const dmPayload = { content: dmContent };
+
+    // On a denial, let the applicant open a ticket straight from
+    // the DM (e.g. to ask about the reason or appeal it).
+    if (!isAccept) {
+      dmPayload.components = [
+        buildOpenTicketRow(applicantId, appId),
+      ];
+    }
+
+    await applicant.send(dmPayload).catch((err) => {
       console.error(
         `Could not DM applicant ${applicantId}:`,
         err.message
@@ -1974,6 +1985,90 @@ module.exports = {
           );
 
           await interaction.showModal(denyModal);
+
+          return;
+        }
+
+
+        /* =================================================
+           OPEN TICKET FROM THE DENY DM
+
+           This button is sent in the applicant's DMs, so
+           interaction.guild is always null here — the guild
+           has to be looked up from the stored application
+           refs instead.
+        ================================================= */
+
+        if (
+          interaction.customId.startsWith(
+            'app_open_ticket_'
+          )
+        ) {
+
+          const rest = interaction.customId.replace(
+            'app_open_ticket_',
+            ''
+          );
+
+          const separator = rest.indexOf('_');
+
+          if (separator === -1) {
+            return interaction.reply({
+              content: '❌ Invalid ticket button.',
+              ephemeral: true,
+            });
+          }
+
+          const applicantId = rest.slice(0, separator);
+          const appId = rest.slice(separator + 1);
+
+          if (interaction.user.id !== applicantId) {
+            return interaction.reply({
+              content:
+                'Only the applicant this button belongs to can use it.',
+              ephemeral: true,
+            });
+          }
+
+          const refs = getApplicationRefs(applicantId, appId);
+
+          let guild = refs?.guildId
+            ? await interaction.client.guilds
+                .fetch(refs.guildId)
+                .catch(() => null)
+            : null;
+
+          // Older applications (denied before this feature) never
+          // had a guildId stored — fall back to the bot's only
+          // guild if there is exactly one.
+          if (!guild && interaction.client.guilds.cache.size === 1) {
+            guild = interaction.client.guilds.cache.first();
+          }
+
+          if (!guild) {
+            return interaction.reply({
+              content:
+                "❌ Couldn't figure out which server to open the ticket in — please contact staff directly.",
+              ephemeral: true,
+            });
+          }
+
+          await createTicket(
+            interaction,
+            'support',
+            [],
+            null,
+            guild
+          );
+
+          // Disable the button so it can't be pressed again.
+          await interaction.message
+            ?.edit({
+              components: [
+                buildOpenTicketRow(applicantId, appId, true),
+              ],
+            })
+            .catch(() => {});
 
           return;
         }
