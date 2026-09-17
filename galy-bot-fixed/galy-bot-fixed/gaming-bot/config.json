@@ -188,6 +188,30 @@
     }
   ],
 
+  "applicationsPanel": {
+    "title": "Voidcove Applications",
+    "requirementsHeading": "## requirements",
+    "requirements": [
+      "Must be 14+ years old",
+      "Must be active in the server",
+      "Must be respectful to all members & staff",
+      "Must be mature and able to handle drama/problems",
+      "Must know and follow all server rules",
+      "Must put effort into your application (no 1 word answers)",
+      "Must have money to buy/sell spawners if needed",
+      "Must know basic server stuff (selling/buying skeleton spawners, support, etc.)",
+      "Must not have recent punishments or warnings",
+      "Must not scam, grief, or abuse your power over others",
+      "Must keep customer bases confidential and delete homes when requested"
+    ],
+    "note": [
+      "Asking for staff will lower chances",
+      "Asking about your app will get you denied",
+      "If you get denied you may reapply after 1 week"
+    ],
+    "color": "#5865F2"
+  },
+
   "applications": [
     {
       "id": "staff",
