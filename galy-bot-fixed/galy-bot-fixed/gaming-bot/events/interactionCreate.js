@@ -31,6 +31,8 @@ const {
   hasApplied,
   clearApplied,
   buildDecisionRow,
+  getApplication,
+  getApplicationRefs,
 } = require('../utils/applicationManager');
 
 const {
@@ -78,6 +80,121 @@ function isSupport(member) {
       !id.startsWith('PUT_') &&
       member.roles.cache.has(id)
   );
+}
+
+
+/* =========================================================
+   FINALIZE APPLICATION ACCEPT / DENY
+
+   Applications can now be shown in TWO places: the ticket
+   channel and the applications log channel. Whichever one
+   staff clicked from is updated via interaction.update(),
+   and the OTHER copy (found via the stored refs) is edited
+   separately so both stay in sync.
+========================================================= */
+
+async function finalizeApplicationDecision({
+  interaction,
+  applicantId,
+  appId,
+  isAccept,
+  reason,
+}) {
+  const appConfig = getApplication(appId);
+  const label = appConfig ? appConfig.label : 'Application';
+
+  const originalEmbed = interaction.message?.embeds?.[0];
+
+  if (!originalEmbed) {
+    await interaction.reply({
+      content: '❌ Could not find the application embed.',
+      ephemeral: true,
+    }).catch(() => {});
+
+    return;
+  }
+
+  const footerText = isAccept
+    ? `Accepted by ${interaction.user.tag}`
+    : reason
+      ? `Denied by ${interaction.user.tag} — ${reason}`
+      : `Denied by ${interaction.user.tag}`;
+
+  const updatedEmbed = EmbedBuilder.from(originalEmbed)
+    .setColor(isAccept ? '#57F287' : '#ED4245')
+    .setFooter({ text: footerText });
+
+  if (!isAccept && reason) {
+    updatedEmbed.addFields({
+      name: 'Deny Reason',
+      value: reason.slice(0, 1024),
+      inline: false,
+    });
+  }
+
+  const disabledRow = buildDecisionRow(applicantId, appId, true);
+
+  await interaction.update({
+    embeds: [updatedEmbed],
+    components: [disabledRow],
+  }).catch(() => {});
+
+  /*
+    Update whichever copy of the message this interaction
+    did NOT come from (ticket <-> log channel).
+  */
+
+  const refs = getApplicationRefs(applicantId, appId);
+
+  if (refs) {
+    const isFromTicket = interaction.channelId === refs.ticketChannelId;
+
+    const otherChannelId = isFromTicket
+      ? refs.logChannelId
+      : refs.ticketChannelId;
+
+    const otherMessageId = isFromTicket
+      ? refs.logMessageId
+      : refs.ticketMessageId;
+
+    if (otherChannelId && otherMessageId) {
+      const otherChannel = await interaction.client.channels
+        .fetch(otherChannelId)
+        .catch(() => null);
+
+      const otherMessage = otherChannel
+        ? await otherChannel.messages.fetch(otherMessageId).catch(() => null)
+        : null;
+
+      if (otherMessage) {
+        await otherMessage.edit({
+          embeds: [updatedEmbed],
+          components: [disabledRow],
+        }).catch(() => {});
+      }
+    }
+  }
+
+  clearApplied(applicantId, appId);
+
+  const applicant = await interaction.client.users
+    .fetch(applicantId)
+    .catch(() => null);
+
+  if (applicant) {
+    const dmContent = isAccept
+      ? `🎉 Your **${label}** application in **${interaction.guild.name}** was accepted!`
+      : reason
+        ? `Your **${label}** application in **${interaction.guild.name}** was denied.\n**Reason:** ${reason}`
+        : `Your **${label}** application in **${interaction.guild.name}** was denied.`;
+
+    await applicant.send(dmContent).catch((err) => {
+      console.error(
+        `Could not DM applicant ${applicantId}:`,
+        err.message
+      );
+    });
+  }
 }
 
 
@@ -1817,119 +1934,111 @@ module.exports = {
 
 
           /* =================================================
-             APPLICATION CONFIG
+             ACCEPT — process immediately
           ================================================= */
 
-          const appConfig =
-            (
-              config.applications ||
-              []
-            ).find(
-              (app) =>
-                String(app.id) ===
-                String(appId)
-            );
-
-          const label =
-            appConfig
-              ? appConfig.label
-              : 'Application';
-
-
-          /* =================================================
-             GET ORIGINAL EMBED
-          ================================================= */
-
-          const originalEmbed =
-            interaction.message
-              .embeds[0];
-
-          if (!originalEmbed) {
-
-            return interaction.reply({
-              content:
-                '❌ Could not find the application embed.',
-              ephemeral: true,
+          if (isAccept) {
+            await finalizeApplicationDecision({
+              interaction,
+              applicantId,
+              appId,
+              isAccept: true,
             });
+
+            return;
           }
 
 
           /* =================================================
-             UPDATE APPLICATION
+             DENY — ask staff for a reason first
           ================================================= */
 
-          const updatedEmbed =
-            EmbedBuilder
-              .from(originalEmbed)
-              .setColor(
-                isAccept
-                  ? '#57F287'
-                  : '#ED4245'
+          const denyModal =
+            new ModalBuilder()
+              .setCustomId(
+                `app_deny_reason_modal_${applicantId}_${appId}`
               )
-              .setFooter({
-                text:
-                  `${
-                    isAccept
-                      ? 'Accepted'
-                      : 'Denied'
-                  } by ${
-                    interaction.user.tag
-                  }`,
-              });
+              .setTitle('Deny Application');
 
+          const denyReasonInput =
+            new TextInputBuilder()
+              .setCustomId('deny_reason_input')
+              .setLabel('Reason for denial')
+              .setStyle(TextInputStyle.Paragraph)
+              .setPlaceholder('e.g. Did not meet requirements')
+              .setRequired(true)
+              .setMaxLength(500);
 
-          await interaction.update({
-            embeds: [
-              updatedEmbed,
-            ],
-
-            components: [
-              buildDecisionRow(
-                applicantId,
-                appId,
-                true
-              ),
-            ],
-          });
-
-
-          /* =================================================
-             CLEAR PENDING APPLICATION
-          ================================================= */
-
-          clearApplied(
-            applicantId,
-            appId
+          denyModal.addComponents(
+            new ActionRowBuilder().addComponents(denyReasonInput)
           );
 
-
-          /* =================================================
-             DM APPLICANT
-          ================================================= */
-
-          const applicant =
-            await interaction.client.users
-              .fetch(applicantId)
-              .catch(() => null);
-
-          if (applicant) {
-
-            await applicant
-              .send(
-                isAccept
-                  ? `🎉 Your **${label}** application in **${interaction.guild.name}** was accepted!`
-                  : `Your **${label}** application in **${interaction.guild.name}** was denied.`
-              )
-              .catch((err) => {
-                console.error(
-                  `Could not DM applicant ${applicantId}:`,
-                  err.message
-                );
-              });
-          }
+          await interaction.showModal(denyModal);
 
           return;
         }
+      }
+
+
+      /* =====================================================
+         DENY APPLICATION REASON MODAL
+      ===================================================== */
+
+      if (
+        interaction.isModalSubmit() &&
+        interaction.customId.startsWith(
+          'app_deny_reason_modal_'
+        )
+      ) {
+
+        const rest =
+          interaction.customId.replace(
+            'app_deny_reason_modal_',
+            ''
+          );
+
+        const separator =
+          rest.indexOf('_');
+
+        if (separator === -1) {
+          return interaction.reply({
+            content: '❌ Invalid application button.',
+            ephemeral: true,
+          });
+        }
+
+        const applicantId =
+          rest.slice(0, separator);
+
+        const appId =
+          rest.slice(separator + 1);
+
+        if (
+          !interaction.member ||
+          !isSupport(interaction.member)
+        ) {
+
+          return interaction.reply({
+            content:
+              'Only staff can accept or deny applications.',
+            ephemeral: true,
+          });
+        }
+
+        const reason =
+          interaction.fields.getTextInputValue(
+            'deny_reason_input'
+          );
+
+        await finalizeApplicationDecision({
+          interaction,
+          applicantId,
+          appId,
+          isAccept: false,
+          reason,
+        });
+
+        return;
       }
 
 
