@@ -6,8 +6,12 @@ const {
   TextDisplayBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
+  AttachmentBuilder,
   MessageFlags,
 } = require('discord.js');
+const path = require('path');
 const config = require('../config.json');
 const { isAdmin } = require('../utils/permissions');
 
@@ -70,6 +74,30 @@ module.exports = {
       )
     );
 
+    // Panel image — supports either a normal URL or a local "attachment://filename"
+    // reference, in which case the file is pulled from the bot's /assets folder
+    // and uploaded fresh each time (Discord CDN links expire, local files don't).
+    const files = [];
+    if (panel.image) {
+      let imageUrl = panel.image;
+
+      if (imageUrl.startsWith('attachment://')) {
+        const fileName = imageUrl.replace('attachment://', '');
+        const filePath = path.join(__dirname, '..', 'assets', fileName);
+        files.push(new AttachmentBuilder(filePath, { name: fileName }));
+        imageUrl = `attachment://${fileName}`;
+      }
+
+      container.addSeparatorComponents(
+        new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+      );
+      container.addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems(
+          new MediaGalleryItemBuilder().setURL(imageUrl)
+        )
+      );
+    }
+
     const menu = new StringSelectMenuBuilder()
       .setCustomId('application_select')
       .setPlaceholder('Select an application…')
@@ -89,6 +117,7 @@ module.exports = {
     await interaction.channel.send({
       flags: MessageFlags.IsComponentsV2,
       components: [container],
+      files,
     });
     await interaction.reply({ content: 'Application panel posted.', ephemeral: true });
   },
