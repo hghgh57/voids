@@ -1,12 +1,25 @@
 const {
   SlashCommandBuilder,
-  EmbedBuilder,
   ActionRowBuilder,
   StringSelectMenuBuilder,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  SectionBuilder,
+  ThumbnailBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
+  MessageFlags,
 } = require('discord.js');
 
 const config = require('../config.json');
 const { isAdmin } = require('../utils/permissions');
+
+function hexToInt(hex) {
+  if (!hex) return 0x5865f2;
+  return parseInt(hex.replace('#', ''), 16);
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -21,29 +34,45 @@ module.exports = {
       });
     }
 
-    const embed = new EmbedBuilder()
-      .setDescription(config.panel.description)
-      .setColor(config.panel.color || '#5865F2')
-      .setFooter({
-        text: config.panel.footer || '',
-      });
+    const container = new ContainerBuilder().setAccentColor(
+      hexToInt(config.panel.color)
+    );
 
     if (config.panel.title) {
-      embed.setTitle(config.panel.title);
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`# ${config.panel.title}`)
+      );
     }
 
-    // Add panel image from config.json
+    const hasLogo = config.logoUrl && !config.logoUrl.startsWith('PUT_');
+
+    // Description, with the server logo shown as a thumbnail beside it when available
+    if (hasLogo) {
+      container.addSectionComponents(
+        new SectionBuilder()
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(config.panel.description)
+          )
+          .setThumbnailAccessory(
+            new ThumbnailBuilder().setURL(config.logoUrl)
+          )
+      );
+    } else {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(config.panel.description)
+      );
+    }
+
+    // Panel image
     if (config.panel.image) {
-      embed.setImage(config.panel.image);
-    }
-
-    if (config.logoUrl && !config.logoUrl.startsWith('PUT_')) {
-      embed.setAuthor({
-        name: config.panel.title || 'Support',
-        iconURL: config.logoUrl,
-      });
-
-      embed.setThumbnail(config.logoUrl);
+      container.addSeparatorComponents(
+        new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+      );
+      container.addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems(
+          new MediaGalleryItemBuilder().setURL(config.panel.image)
+        )
+      );
     }
 
     const menu = new StringSelectMenuBuilder()
@@ -58,11 +87,22 @@ module.exports = {
         }))
       );
 
-    const row = new ActionRowBuilder().addComponents(menu);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(menu)
+    );
+
+    if (config.panel.footer) {
+      container.addSeparatorComponents(
+        new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+      );
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`-# ${config.panel.footer}`)
+      );
+    }
 
     await interaction.channel.send({
-      embeds: [embed],
-      components: [row],
+      flags: MessageFlags.IsComponentsV2,
+      components: [container],
     });
 
     await interaction.reply({
