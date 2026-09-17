@@ -213,9 +213,14 @@ async function createTicket(
   interaction,
   categoryId,
   answers = [],
-  staffRoleOverride = null
+  staffRoleOverride = null,
+  guildOverride = null
 ) {
-  const { guild, user } = interaction;
+  // guildOverride lets this be called from a DM interaction
+  // (e.g. the "Open Ticket" button on a denied application),
+  // where interaction.guild is always null.
+  const guild = guildOverride || interaction.guild;
+  const { user } = interaction;
 
   if (!guild) {
     return interaction.reply({
@@ -906,6 +911,10 @@ async function createApplicationTicket(
         ticketMessageId: ticketMessage?.id || null,
         logChannelId: logChannel?.id || null,
         logMessageId: logMessage?.id || null,
+        // Needed so the "Open Ticket" button on the deny DM
+        // (sent to the applicant, outside the server) can find
+        // its way back to the correct guild.
+        guildId: guild.id,
       }
     );
 
