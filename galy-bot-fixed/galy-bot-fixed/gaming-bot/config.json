@@ -188,7 +188,8 @@
             "Asking about your app will get you denied",
             "If you get denied you may reapply after 1 week"
         ],
-        "color": "#5865F2"
+        "color": "#5865F2",
+        "image": "attachment://voidscove-banner.png"
     },
     "applications": [
         {
