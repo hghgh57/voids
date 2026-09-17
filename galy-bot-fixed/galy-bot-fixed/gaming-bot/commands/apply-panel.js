@@ -1,11 +1,20 @@
 const {
   SlashCommandBuilder,
-  EmbedBuilder,
   ActionRowBuilder,
   StringSelectMenuBuilder,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  MessageFlags,
 } = require('discord.js');
 const config = require('../config.json');
 const { isAdmin } = require('../utils/permissions');
+
+function hexToInt(hex) {
+  if (!hex) return 0x5865f2;
+  return parseInt(hex.replace('#', ''), 16);
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -22,10 +31,44 @@ module.exports = {
       return interaction.reply({ content: 'No applications are configured yet.', ephemeral: true });
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle('📋 Applications')
-      .setDescription('Select which application you want to fill out below.')
-      .setColor('#5865F2');
+    const panel = config.applicationsPanel || {};
+    const container = new ContainerBuilder().setAccentColor(hexToInt(panel.color));
+
+    // Title
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`# ${panel.title || 'Applications'}`)
+    );
+
+    // Requirements heading
+    if (panel.requirementsHeading) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(panel.requirementsHeading)
+      );
+    }
+
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+    );
+
+    // Requirements list
+    const requirements = panel.requirements || [];
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        requirements.map((r) => `- ${r}`).join('\n')
+      )
+    );
+
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+    );
+
+    // Note
+    const notes = panel.note || [];
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        ['**Note:**', ...notes].join('\n')
+      )
+    );
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId('application_select')
@@ -39,9 +82,14 @@ module.exports = {
         }))
       );
 
-    const row = new ActionRowBuilder().addComponents(menu);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(menu)
+    );
 
-    await interaction.channel.send({ embeds: [embed], components: [row] });
+    await interaction.channel.send({
+      flags: MessageFlags.IsComponentsV2,
+      components: [container],
+    });
     await interaction.reply({ content: 'Application panel posted.', ephemeral: true });
   },
 };
