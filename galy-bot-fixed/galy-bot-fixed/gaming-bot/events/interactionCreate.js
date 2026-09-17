@@ -7,7 +7,18 @@ const {
   EmbedBuilder,
   PermissionsBitField,
   ChannelType,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  SectionBuilder,
+  ThumbnailBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
+  AttachmentBuilder,
+  MessageFlags,
 } = require('discord.js');
+const path = require('path');
 
 const {
   createTicket,
@@ -53,6 +64,11 @@ const {
    SUPPORT CHECK
 ========================================================= */
 
+function hexToInt(hex) {
+  if (!hex) return 0x5865f2;
+  return parseInt(hex.replace('#', ''), 16);
+}
+
 function isSupport(member) {
   const roleIds = config.supportRoleIds || [];
 
@@ -76,6 +92,56 @@ async function resetTicketDropdown(message) {
 
   if (!categories.length) return;
 
+  const panel = config.panel || {};
+  const container = new ContainerBuilder().setAccentColor(
+    hexToInt(panel.color)
+  );
+
+  if (panel.title) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`# ${panel.title}`)
+    );
+  }
+
+  const hasLogo = config.logoUrl && !config.logoUrl.startsWith('PUT_');
+
+  if (hasLogo) {
+    container.addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(panel.description)
+        )
+        .setThumbnailAccessory(
+          new ThumbnailBuilder().setURL(config.logoUrl)
+        )
+    );
+  } else {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(panel.description)
+    );
+  }
+
+  const files = [];
+  if (panel.image) {
+    let imageUrl = panel.image;
+
+    if (imageUrl.startsWith('attachment://')) {
+      const fileName = imageUrl.replace('attachment://', '');
+      const filePath = path.join(__dirname, '..', 'assets', fileName);
+      files.push(new AttachmentBuilder(filePath, { name: fileName }));
+      imageUrl = `attachment://${fileName}`;
+    }
+
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+    );
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(imageUrl)
+      )
+    );
+  }
+
   const menu = new StringSelectMenuBuilder()
     .setCustomId('ticket_category_select')
     .setPlaceholder('Select a ticket category…')
@@ -95,11 +161,24 @@ async function resetTicketDropdown(message) {
         }))
     );
 
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(menu)
+  );
+
+  if (panel.footer) {
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+    );
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`-# ${panel.footer}`)
+    );
+  }
+
   await message
     .edit({
-      components: [
-        new ActionRowBuilder().addComponents(menu),
-      ],
+      flags: MessageFlags.IsComponentsV2,
+      components: [container],
+      files,
     })
     .catch((err) => {
       console.error(
@@ -166,6 +245,62 @@ async function resetApplicationDropdown(message) {
 
   if (!apps.length) return;
 
+  const panel = config.applicationsPanel || {};
+  const container = new ContainerBuilder().setAccentColor(hexToInt(panel.color));
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`# ${panel.title || 'Applications'}`)
+  );
+
+  if (panel.requirementsHeading) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(panel.requirementsHeading)
+    );
+  }
+
+  container.addSeparatorComponents(
+    new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+  );
+
+  const requirements = panel.requirements || [];
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      requirements.map((r) => `- ${r}`).join('\n')
+    )
+  );
+
+  container.addSeparatorComponents(
+    new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+  );
+
+  const notes = panel.note || [];
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      ['**Note:**', ...notes].join('\n')
+    )
+  );
+
+  const files = [];
+  if (panel.image) {
+    let imageUrl = panel.image;
+
+    if (imageUrl.startsWith('attachment://')) {
+      const fileName = imageUrl.replace('attachment://', '');
+      const filePath = path.join(__dirname, '..', 'assets', fileName);
+      files.push(new AttachmentBuilder(filePath, { name: fileName }));
+      imageUrl = `attachment://${fileName}`;
+    }
+
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+    );
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(imageUrl)
+      )
+    );
+  }
+
   const menu = new StringSelectMenuBuilder()
     .setCustomId('application_select')
     .setPlaceholder('Select an application…')
@@ -187,11 +322,15 @@ async function resetApplicationDropdown(message) {
         }))
     );
 
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(menu)
+  );
+
   await message
     .edit({
-      components: [
-        new ActionRowBuilder().addComponents(menu),
-      ],
+      flags: MessageFlags.IsComponentsV2,
+      components: [container],
+      files,
     })
     .catch((err) => {
       console.error(
