@@ -12,6 +12,7 @@ const { buildTranscript } = require('./transcript');
 const {
   buildApplicationEmbed,
   buildDecisionRow,
+  updateApplicationRefs,
 } = require('./applicationManager');
 const { incrementStat } = require('./staffTracker');
 const { findGiveawayWin } = require('./giveawayChecker');
@@ -824,18 +825,19 @@ async function createApplicationTicket(
         .join(' ');
 
 
-    await channel.send({
-      content:
-        `${user} ${mentions}`.trim(),
+    const ticketMessage =
+      await channel.send({
+        content:
+          `${user} ${mentions}`.trim(),
 
-      embeds: [
-        embed,
-      ],
+        embeds: [
+          embed,
+        ],
 
-      components: [
-        decisionRow,
-      ],
-    });
+        components: [
+          decisionRow,
+        ],
+      });
 
 
     await channel.send({
@@ -847,6 +849,64 @@ async function createApplicationTicket(
 
     console.log(
       `[APPLICATION] Successfully created application ticket ${channel.id}`
+    );
+
+
+    /*
+      Also send a copy of the application to the applications
+      log channel, so staff can review/accept/deny it from
+      there without needing to open the ticket channel.
+
+      This never blocks or fails the ticket itself — if the
+      log channel is missing or send fails, the ticket above
+      has already been created successfully.
+    */
+
+    let logChannel = null;
+    let logMessage = null;
+
+    if (
+      config.applicationLogChannelId &&
+      !String(config.applicationLogChannelId).startsWith('PUT_')
+    ) {
+      logChannel =
+        await guild.channels
+          .fetch(config.applicationLogChannelId)
+          .catch(() => null);
+
+      if (logChannel && logChannel.isTextBased?.()) {
+        logMessage =
+          await logChannel.send({
+            content: mentions || undefined,
+
+            embeds: [
+              embed,
+            ],
+
+            components: [
+              decisionRow,
+            ],
+          }).catch((err) => {
+            console.error(
+              '[APPLICATION] Failed to send log copy:',
+              err
+            );
+
+            return null;
+          });
+      }
+    }
+
+
+    updateApplicationRefs(
+      user.id,
+      appId,
+      {
+        ticketChannelId: channel.id,
+        ticketMessageId: ticketMessage?.id || null,
+        logChannelId: logChannel?.id || null,
+        logMessageId: logMessage?.id || null,
+      }
     );
 
 
