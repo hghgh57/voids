@@ -10,10 +10,6 @@ const {
   Partials,
 } = require('discord.js');
 
-const {
-  startWebApplicationServer,
-} = require('./utils/webApplicationManager');
-
 
 /* =========================================================
    CLIENT
@@ -211,13 +207,11 @@ if (fs.existsSync(eventsPath)) {
 
 
 /* =========================================================
-   WEBSITE APPLICATION API
+   WEBSITE APPLICATION API — not used, disabled.
+   (utils/webApplicationManager.js is kept in case you turn
+   the website back on later — just re-add the require and
+   the startWebApplicationServer(client, config) call above.)
 ========================================================= */
-
-startWebApplicationServer(
-  client,
-  require('./config.json')
-);
 
 
 /* =========================================================
