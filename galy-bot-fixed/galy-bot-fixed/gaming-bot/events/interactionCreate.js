@@ -22,6 +22,7 @@ const path = require('path');
 
 const {
   createTicket,
+  createApplicationTicketChannel,
   claimTicket,
   closeTicket,
   buildTicketControlRow,
@@ -33,7 +34,6 @@ const {
   buildDecisionRow,
   getApplication,
   getApplicationRefs,
-  buildOpenTicketRow,
 } = require('../utils/applicationManager');
 
 const {
@@ -115,19 +115,19 @@ async function finalizeApplicationDecision({
     return;
   }
 
-  const footerText = isAccept
-    ? `Accepted by ${interaction.user.tag}`
-    : reason
-      ? `Denied by ${interaction.user.tag} — ${reason}`
-      : `Denied by ${interaction.user.tag}`;
+  const actionWord = isAccept ? 'Accepted' : 'Closed';
+
+  const footerText = reason
+    ? `${actionWord} by ${interaction.user.tag} — ${reason}`
+    : `${actionWord} by ${interaction.user.tag}`;
 
   const updatedEmbed = EmbedBuilder.from(originalEmbed)
     .setColor(isAccept ? '#57F287' : '#ED4245')
     .setFooter({ text: footerText });
 
-  if (!isAccept && reason) {
+  if (reason) {
     updatedEmbed.addFields({
-      name: 'Deny Reason',
+      name: isAccept ? 'Accept Note' : 'Close Reason',
       value: reason.slice(0, 1024),
       inline: false,
     });
@@ -184,22 +184,14 @@ async function finalizeApplicationDecision({
 
   if (applicant) {
     const dmContent = isAccept
-      ? `🎉 Your **${label}** application in **${interaction.guild.name}** was accepted!`
+      ? reason
+        ? `🎉 Your **${label}** application in **${interaction.guild.name}** was accepted!\n**Note:** ${reason}`
+        : `🎉 Your **${label}** application in **${interaction.guild.name}** was accepted!`
       : reason
-        ? `Your **${label}** application in **${interaction.guild.name}** was denied.\n**Reason:** ${reason}`
-        : `Your **${label}** application in **${interaction.guild.name}** was denied.`;
+        ? `Your **${label}** application in **${interaction.guild.name}** was closed.\n**Reason:** ${reason}`
+        : `Your **${label}** application in **${interaction.guild.name}** was closed.`;
 
-    const dmPayload = { content: dmContent };
-
-    // On a denial, let the applicant open a ticket straight from
-    // the DM (e.g. to ask about the reason or appeal it).
-    if (!isAccept) {
-      dmPayload.components = [
-        buildOpenTicketRow(applicantId, appId),
-      ];
-    }
-
-    await applicant.send(dmPayload).catch((err) => {
+    await applicant.send(dmContent).catch((err) => {
       console.error(
         `Could not DM applicant ${applicantId}:`,
         err.message
@@ -1862,67 +1854,57 @@ module.exports = {
 
 
         /* =================================================
-           APPLICATION ACCEPT / DENY
+           APPLICATION ACCEPT / CLOSE (+ w/ REASON variants)
+
+           NOTE: "app_accept_reason_" / "app_close_reason_"
+           are checked as their own prefixes here — since they
+           also start with "app_accept_" / "app_close_", the
+           bare-vs-reason distinction is made explicitly below
+           rather than with .startsWith() elimination.
         ================================================= */
 
         if (
-          interaction.customId.startsWith(
-            'app_accept_'
-          ) ||
-          interaction.customId.startsWith(
-            'app_deny_'
-          )
+          interaction.customId.startsWith('app_accept_reason_') ||
+          interaction.customId.startsWith('app_close_reason_') ||
+          interaction.customId.startsWith('app_accept_') ||
+          interaction.customId.startsWith('app_close_')
         ) {
 
+          const wantsReason =
+            interaction.customId.startsWith('app_accept_reason_') ||
+            interaction.customId.startsWith('app_close_reason_');
+
           const isAccept =
-            interaction.customId.startsWith(
-              'app_accept_'
-            );
+            interaction.customId.startsWith('app_accept_reason_') ||
+            interaction.customId.startsWith('app_accept_');
 
-          const prefix =
-            isAccept
-              ? 'app_accept_'
-              : 'app_deny_';
-
-          const rest =
-            interaction.customId.replace(
-              prefix,
-              ''
-            );
+          const prefix = wantsReason
+            ? (isAccept ? 'app_accept_reason_' : 'app_close_reason_')
+            : (isAccept ? 'app_accept_' : 'app_close_');
 
           /*
             Format:
 
             app_accept_USERID_APPID
-            app_deny_USERID_APPID
+            app_accept_reason_USERID_APPID
+            app_close_USERID_APPID
+            app_close_reason_USERID_APPID
 
             Split only at the FIRST underscore.
           */
 
-          const separator =
-            rest.indexOf('_');
+          const rest = interaction.customId.slice(prefix.length);
+          const separator = rest.indexOf('_');
 
-          if (
-            separator === -1
-          ) {
-
+          if (separator === -1) {
             return interaction.reply({
-              content:
-                '❌ Invalid application button.',
+              content: '❌ Invalid application button.',
               ephemeral: true,
             });
           }
 
-          const applicantId =
-            rest.slice(
-              0,
-              separator
-            );
-
-          const appId =
-            rest.slice(
-              separator + 1
-            );
+          const applicantId = rest.slice(0, separator);
+          const appId = rest.slice(separator + 1);
 
 
           /* =================================================
@@ -1931,29 +1913,27 @@ module.exports = {
 
           if (
             !interaction.member ||
-            !isSupport(
-              interaction.member
-            )
+            !isSupport(interaction.member)
           ) {
 
             return interaction.reply({
               content:
-                'Only staff can accept or deny applications.',
+                'Only staff can accept or close applications.',
               ephemeral: true,
             });
           }
 
 
           /* =================================================
-             ACCEPT — process immediately
+             NO REASON — process immediately
           ================================================= */
 
-          if (isAccept) {
+          if (!wantsReason) {
             await finalizeApplicationDecision({
               interaction,
               applicantId,
               appId,
-              isAccept: true,
+              isAccept,
             });
 
             return;
@@ -1961,48 +1941,52 @@ module.exports = {
 
 
           /* =================================================
-             DENY — ask staff for a reason first
+             WITH REASON — ask staff for it first
           ================================================= */
 
-          const denyModal =
+          const reasonModal =
             new ModalBuilder()
               .setCustomId(
-                `app_deny_reason_modal_${applicantId}_${appId}`
+                `${prefix}modal_${applicantId}_${appId}`
               )
-              .setTitle('Deny Application');
+              .setTitle(
+                isAccept ? 'Accept Application' : 'Close Application'
+              );
 
-          const denyReasonInput =
+          const reasonInput =
             new TextInputBuilder()
-              .setCustomId('deny_reason_input')
-              .setLabel('Reason for denial')
+              .setCustomId('decision_reason_input')
+              .setLabel(
+                isAccept ? 'Note for the applicant' : 'Reason for closing'
+              )
               .setStyle(TextInputStyle.Paragraph)
-              .setPlaceholder('e.g. Did not meet requirements')
+              .setPlaceholder(
+                isAccept
+                  ? 'e.g. Welcome to the team!'
+                  : 'e.g. Did not meet requirements'
+              )
               .setRequired(true)
               .setMaxLength(500);
 
-          denyModal.addComponents(
-            new ActionRowBuilder().addComponents(denyReasonInput)
+          reasonModal.addComponents(
+            new ActionRowBuilder().addComponents(reasonInput)
           );
 
-          await interaction.showModal(denyModal);
+          await interaction.showModal(reasonModal);
 
           return;
         }
 
 
         /* =================================================
-           OPEN TICKET FROM THE DENY DM
+           OPEN TICKET (staff-triggered, from the review post)
 
-           This button is sent in the applicant's DMs, so
-           interaction.guild is always null here — the guild
-           has to be looked up from the stored application
-           refs instead.
+           Creates the per-applicant ticket channel on demand
+           instead of automatically at submission time.
         ================================================= */
 
         if (
-          interaction.customId.startsWith(
-            'app_open_ticket_'
-          )
+          interaction.customId.startsWith('app_open_ticket_')
         ) {
 
           const rest = interaction.customId.replace(
@@ -2022,78 +2006,100 @@ module.exports = {
           const applicantId = rest.slice(0, separator);
           const appId = rest.slice(separator + 1);
 
-          if (interaction.user.id !== applicantId) {
+          if (
+            !interaction.member ||
+            !isSupport(interaction.member)
+          ) {
+
             return interaction.reply({
               content:
-                'Only the applicant this button belongs to can use it.',
+                'Only staff can open a ticket for an application.',
               ephemeral: true,
             });
           }
 
           const refs = getApplicationRefs(applicantId, appId);
 
-          let guild = refs?.guildId
-            ? await interaction.client.guilds
-                .fetch(refs.guildId)
-                .catch(() => null)
-            : null;
+          // Already has a live ticket channel? Point staff at it
+          // instead of creating a duplicate.
+          if (refs?.ticketChannelId) {
+            const existing = await interaction.guild.channels
+              .fetch(refs.ticketChannelId)
+              .catch(() => null);
 
-          // Older applications (denied before this feature) never
-          // had a guildId stored — fall back to the bot's only
-          // guild if there is exactly one.
-          if (!guild && interaction.client.guilds.cache.size === 1) {
-            guild = interaction.client.guilds.cache.first();
+            if (existing) {
+              return interaction.reply({
+                content: `A ticket is already open: ${existing}`,
+                ephemeral: true,
+              });
+            }
           }
 
-          if (!guild) {
+          const appConfig = getApplication(appId);
+
+          if (!appConfig) {
             return interaction.reply({
-              content:
-                "❌ Couldn't figure out which server to open the ticket in — please contact staff directly.",
+              content: "❌ Couldn't find that application's configuration.",
               ephemeral: true,
             });
           }
 
-          await createTicket(
-            interaction,
-            'support',
-            [],
-            null,
-            guild
+          const member = await interaction.guild.members
+            .fetch(applicantId)
+            .catch(() => null);
+
+          if (!member) {
+            return interaction.reply({
+              content: '❌ Could not find that applicant in this server.',
+              ephemeral: true,
+            });
+          }
+
+          await interaction.deferReply({ ephemeral: true });
+
+          const channel = await createApplicationTicketChannel(
+            interaction.guild,
+            member,
+            appId,
+            appConfig,
+            refs?.answers || []
           );
 
-          // Disable the button so it can't be pressed again.
-          await interaction.message
-            ?.edit({
-              components: [
-                buildOpenTicketRow(applicantId, appId, true),
-              ],
-            })
-            .catch(() => {});
+          if (!channel) {
+            return interaction.editReply({
+              content: '❌ Failed to create the ticket channel.',
+            });
+          }
 
-          return;
+          return interaction.editReply({
+            content: `✅ Ticket opened: ${channel}`,
+          });
         }
       }
 
 
       /* =====================================================
-         DENY APPLICATION REASON MODAL
+         APPLICATION ACCEPT / CLOSE — REASON MODAL SUBMIT
       ===================================================== */
 
       if (
         interaction.isModalSubmit() &&
-        interaction.customId.startsWith(
-          'app_deny_reason_modal_'
+        (
+          interaction.customId.startsWith('app_accept_reason_modal_') ||
+          interaction.customId.startsWith('app_close_reason_modal_')
         )
       ) {
 
-        const rest =
-          interaction.customId.replace(
-            'app_deny_reason_modal_',
-            ''
-          );
+        const isAccept = interaction.customId.startsWith(
+          'app_accept_reason_modal_'
+        );
 
-        const separator =
-          rest.indexOf('_');
+        const prefix = isAccept
+          ? 'app_accept_reason_modal_'
+          : 'app_close_reason_modal_';
+
+        const rest = interaction.customId.slice(prefix.length);
+        const separator = rest.indexOf('_');
 
         if (separator === -1) {
           return interaction.reply({
@@ -2102,11 +2108,8 @@ module.exports = {
           });
         }
 
-        const applicantId =
-          rest.slice(0, separator);
-
-        const appId =
-          rest.slice(separator + 1);
+        const applicantId = rest.slice(0, separator);
+        const appId = rest.slice(separator + 1);
 
         if (
           !interaction.member ||
@@ -2115,21 +2118,21 @@ module.exports = {
 
           return interaction.reply({
             content:
-              'Only staff can accept or deny applications.',
+              'Only staff can accept or close applications.',
             ephemeral: true,
           });
         }
 
         const reason =
           interaction.fields.getTextInputValue(
-            'deny_reason_input'
+            'decision_reason_input'
           );
 
         await finalizeApplicationDecision({
           interaction,
           applicantId,
           appId,
-          isAccept: false,
+          isAccept,
           reason,
         });
 
