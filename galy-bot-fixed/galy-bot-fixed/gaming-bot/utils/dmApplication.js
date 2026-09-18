@@ -11,7 +11,7 @@ const {
 } = require('./applicationManager');
 
 const {
-  createApplicationTicket,
+  submitApplication,
 } = require('./ticketManager');
 
 
@@ -487,13 +487,13 @@ async function runQuestionLoop(
   );
 
 
-  let channel =
+  let posted =
     null;
 
 
   try {
-    channel =
-      await createApplicationTicket(
+    posted =
+      await submitApplication(
         guild,
         member,
         appId,
@@ -505,16 +505,16 @@ async function runQuestionLoop(
 
   catch (err) {
     console.error(
-      '[APPLICATION] createApplicationTicket threw an error:',
+      '[APPLICATION] submitApplication threw an error:',
       err
     );
 
-    channel =
+    posted =
       null;
   }
 
 
-  if (!channel) {
+  if (!posted) {
     clearApplied(
       user.id,
       appId
@@ -522,7 +522,7 @@ async function runQuestionLoop(
 
 
     await dm.send(
-      "⚠️ I couldn't open a ticket for your application. Please contact staff."
+      "⚠️ I couldn't submit your application. Please contact staff."
     ).catch(() => {});
 
 
@@ -531,8 +531,7 @@ async function runQuestionLoop(
 
 
   await dm.send(
-    `✅ Application submitted successfully!\n\n` +
-    `Your application ticket has been created: ${channel.url}`
+    `✅ Application submitted successfully! Staff will review it soon.`
   ).catch(() => {});
 }
 
