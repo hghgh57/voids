@@ -806,26 +806,21 @@ async function createApplicationTicketChannel(
 
 
     /*
-      Build the application embed.
-
-      buildApplicationEmbed can throw if Discord
-      rejects one of the fields, so keep everything
-      inside this try block.
+      Keep this simple — a normal-looking ticket, not a
+      second copy of the full application review UI (that
+      already lives on the review post). Just enough context
+      for staff to know who they're talking to, plus the
+      normal Claim / Close / Close with Reason controls.
     */
 
-    const embed =
-      buildApplicationEmbed(
-        member,
-        appConfig,
-        answers
-      );
-
-
-    const decisionRow =
-      buildDecisionRow(
-        user.id,
-        appId
-      );
+    const welcomeEmbed =
+      new EmbedBuilder()
+        .setTitle('🎫 Application Ticket')
+        .setDescription(
+          `Hi ${user}, a staff member opened this ticket to discuss your **${appConfig.label}** application.`
+        )
+        .setColor(appConfig.color || '#5865F2')
+        .setTimestamp();
 
 
     const mentions =
@@ -837,22 +832,14 @@ async function createApplicationTicketChannel(
         .join(' ');
 
 
-    const ticketMessage =
-      await channel.send({
-        content:
-          `${user} ${mentions}`.trim(),
-
-        embeds: [
-          embed,
-        ],
-
-        components: [
-          decisionRow,
-        ],
-      });
-
-
     await channel.send({
+      content:
+        `${user} ${mentions}`.trim(),
+
+      embeds: [
+        welcomeEmbed,
+      ],
+
       components: [
         buildTicketControlRow(),
       ],
@@ -864,15 +851,14 @@ async function createApplicationTicketChannel(
     );
 
 
-    // The review-channel post already exists from submitApplication —
-    // just point the stored refs at this new ticket channel too, so
-    // accept/close from either copy keeps both in sync.
+    // Only the channel ID is stored — no message ID, since this
+    // channel no longer carries a decision-row copy that would
+    // need to be kept in sync with the review post.
     updateApplicationRefs(
       user.id,
       appId,
       {
         ticketChannelId: channel.id,
-        ticketMessageId: ticketMessage?.id || null,
         guildId: guild.id,
       }
     );
