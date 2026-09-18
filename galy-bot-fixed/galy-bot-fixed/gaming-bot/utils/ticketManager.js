@@ -539,10 +539,17 @@ async function createTicket(
 
 
 /* =========================================================
-   CREATE APPLICATION TICKET
+   OPEN A TICKET CHANNEL WITH AN APPLICANT
+
+   Applications are posted ONLY to the review channel when
+   submitted (see submitApplication below). This function is
+   only called on-demand, when a staff member presses the
+   "Open Ticket" button on that review post — it creates the
+   actual per-applicant channel so staff can talk to them
+   directly.
 ========================================================= */
 
-async function createApplicationTicket(
+async function createApplicationTicketChannel(
   guild,
   member,
   appId,
@@ -857,63 +864,15 @@ async function createApplicationTicket(
     );
 
 
-    /*
-      Also send a copy of the application to the applications
-      log channel, so staff can review/accept/deny it from
-      there without needing to open the ticket channel.
-
-      This never blocks or fails the ticket itself — if the
-      log channel is missing or send fails, the ticket above
-      has already been created successfully.
-    */
-
-    let logChannel = null;
-    let logMessage = null;
-
-    if (
-      config.applicationLogChannelId &&
-      !String(config.applicationLogChannelId).startsWith('PUT_')
-    ) {
-      logChannel =
-        await guild.channels
-          .fetch(config.applicationLogChannelId)
-          .catch(() => null);
-
-      if (logChannel && logChannel.isTextBased?.()) {
-        logMessage =
-          await logChannel.send({
-            content: mentions || undefined,
-
-            embeds: [
-              embed,
-            ],
-
-            components: [
-              decisionRow,
-            ],
-          }).catch((err) => {
-            console.error(
-              '[APPLICATION] Failed to send log copy:',
-              err
-            );
-
-            return null;
-          });
-      }
-    }
-
-
+    // The review-channel post already exists from submitApplication —
+    // just point the stored refs at this new ticket channel too, so
+    // accept/close from either copy keeps both in sync.
     updateApplicationRefs(
       user.id,
       appId,
       {
         ticketChannelId: channel.id,
         ticketMessageId: ticketMessage?.id || null,
-        logChannelId: logChannel?.id || null,
-        logMessageId: logMessage?.id || null,
-        // Needed so the "Open Ticket" button on the deny DM
-        // (sent to the applicant, outside the server) can find
-        // its way back to the correct guild.
         guildId: guild.id,
       }
     );
@@ -925,10 +884,91 @@ async function createApplicationTicket(
 
   catch (err) {
     console.error(
-      '[APPLICATION] Failed to create application ticket:',
+      '[APPLICATION] Failed to create application ticket channel:',
       err
     );
 
+    return null;
+  }
+}
+
+
+/* =========================================================
+   SUBMIT APPLICATION — post to the review channel only
+
+   No per-applicant channel is created here. This just posts
+   the application embed (with join/account stats baked in via
+   buildApplicationEmbed) to config.applicationLogChannelId with
+   the 5-button decision row. A ticket channel with the applicant
+   is only created later, on demand, via createApplicationTicketChannel
+   above, when staff press "Open Ticket".
+========================================================= */
+
+async function submitApplication(
+  guild,
+  member,
+  appId,
+  appConfig,
+  answers
+) {
+  try {
+    if (!guild) {
+      throw new Error('Missing guild when submitting application.');
+    }
+
+    if (!member || !member.user) {
+      throw new Error('Missing member when submitting application.');
+    }
+
+    if (!appConfig) {
+      throw new Error('Missing application configuration.');
+    }
+
+    if (
+      !config.applicationLogChannelId ||
+      String(config.applicationLogChannelId).startsWith('PUT_')
+    ) {
+      throw new Error('applicationLogChannelId is not configured.');
+    }
+
+    const reviewChannel = await guild.channels
+      .fetch(config.applicationLogChannelId)
+      .catch(() => null);
+
+    if (!reviewChannel || !reviewChannel.isTextBased?.()) {
+      throw new Error('Could not find the applications review channel.');
+    }
+
+    const embed = buildApplicationEmbed(member, appConfig, answers);
+    const decisionRow = buildDecisionRow(member.user.id, appId);
+
+    const applicationRoleIds = getApplicationTicketRoleIds();
+    const mentions = applicationRoleIds
+      .map((roleId) => `<@&${roleId}>`)
+      .join(' ');
+
+    const message = await reviewChannel.send({
+      content: mentions || undefined,
+      embeds: [embed],
+      components: [decisionRow],
+    });
+
+    updateApplicationRefs(member.user.id, appId, {
+      guildId: guild.id,
+      logChannelId: reviewChannel.id,
+      logMessageId: message.id,
+      // Kept so "Open Ticket" can build the ticket channel
+      // later without the applicant having to re-answer.
+      answers,
+    });
+
+    console.log(
+      `[APPLICATION] Posted ${appId} application from ${member.user.id} to the review channel.`
+    );
+
+    return message;
+  } catch (err) {
+    console.error('[APPLICATION] Failed to submit application:', err);
     return null;
   }
 }
@@ -1205,7 +1245,8 @@ async function closeTicket(interaction, reason) {
 
 module.exports = {
   createTicket,
-  createApplicationTicket,
+  createApplicationTicketChannel,
+  submitApplication,
   claimTicket,
   closeTicket,
   parseTopic,
