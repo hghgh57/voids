@@ -129,7 +129,18 @@ function buildApplicationEmbed(member, appConfig, answers) {
 }
 
 /* =========================================================
-   ACCEPT / DENY BUTTONS (on the application ticket)
+   APPLICATION REVIEW BUTTONS
+
+   Sent on the application post in the review channel:
+   Close / Close w/ Reason / Accept / Accept w/ Reason /
+   Open Ticket (staff opens a ticket channel with the
+   applicant to discuss it — see createApplicationTicketChannel
+   in ticketManager.js).
+
+   NOTE ON CUSTOM IDS: handlers match these with .startsWith(),
+   so "app_accept_reason_" / "app_close_reason_" must be checked
+   BEFORE the bare "app_accept_" / "app_close_" prefixes, since
+   the reason variants also start with the bare prefix.
 ========================================================= */
 
 function buildDecisionRow(userId, appId, disabled = false) {
@@ -141,24 +152,24 @@ function buildDecisionRow(userId, appId, disabled = false) {
       .setStyle(ButtonStyle.Success)
       .setDisabled(disabled),
     new ButtonBuilder()
-      .setCustomId(`app_deny_${userId}_${appId}`)
-      .setLabel('Deny')
+      .setCustomId(`app_accept_reason_${userId}_${appId}`)
+      .setLabel('Accept w/ Reason')
+      .setEmoji('📝')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId(`app_close_${userId}_${appId}`)
+      .setLabel('Close')
       .setEmoji('❌')
       .setStyle(ButtonStyle.Danger)
-      .setDisabled(disabled)
-  );
-}
-
-/* =========================================================
-   OPEN TICKET BUTTON (sent to the applicant's DM when denied)
-========================================================= */
-
-function buildOpenTicketRow(userId, appId, disabled = false) {
-  return new ActionRowBuilder().addComponents(
+      .setDisabled(disabled),
     new ButtonBuilder()
-      // NOTE: must NOT start with "app_accept_" or "app_deny_" —
-      // those prefixes are matched with .startsWith() elsewhere
-      // and would swallow this button's clicks.
+      .setCustomId(`app_close_reason_${userId}_${appId}`)
+      .setLabel('Close w/ Reason')
+      .setEmoji('📝')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled),
+    new ButtonBuilder()
       .setCustomId(`app_open_ticket_${userId}_${appId}`)
       .setLabel('Open Ticket')
       .setEmoji('🎫')
@@ -176,5 +187,4 @@ module.exports = {
   getApplication,
   buildApplicationEmbed,
   buildDecisionRow,
-  buildOpenTicketRow,
 };
